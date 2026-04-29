@@ -1,0 +1,1988 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Canvas — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      height: 52px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(var(--glass-blur)) saturate(1.4);
+      border-bottom: 1px solid var(--glass-border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px;
+    }
+    .toolbar-left, .toolbar-right { display: flex; align-items: center; gap: 10px; }
+    .toolbar-title { font-weight: 800; font-size: 1rem; color: var(--accent); letter-spacing: -0.02em; margin-right: 14px; text-shadow: 0 0 24px var(--accent-glow); }
+    .toolbar-hint { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); opacity: 0.7; }
+
+    .tool-btn {
+      height: 34px; display: flex; align-items: center; justify-content: center; gap: 6px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--text); font-size: 0.75rem; font-family: var(--font-display); font-weight: 600;
+      cursor: pointer; transition: all 0.2s ease; padding: 0 12px; white-space: nowrap;
+    }
+    .tool-btn:hover { color: var(--accent); border-color: var(--accent-soft); background: var(--accent-glow); transform: translateY(-1px); }
+    .tool-btn:active { transform: translateY(0); }
+    .tool-btn--icon { width: 34px; padding: 0; font-size: 0.95rem; }
+
+    /* ── Canvas ── */
+    .canvas {
+      position: fixed; top: 52px; left: 0; right: 0; bottom: 0;
+      overflow: hidden; background: var(--bg-gradient); cursor: grab;
+    }
+    .canvas--panning { cursor: grabbing; }
+
+    .transform-layer { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
+
+    .grid-bg {
+      position: absolute; left: -10000px; top: -10000px; width: 20000px; height: 20000px;
+      background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+      background-size: 28px 28px; pointer-events: none;
+    }
+
+    .connectors-svg { position: absolute; left: -10000px; top: -10000px; width: 20000px; height: 20000px; pointer-events: auto; z-index: 1; }
+    .connector-line { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0.22; stroke-dasharray: 8 6; pointer-events: none; }
+    .connector-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+    .connector-hit:hover + .connector-line, .connector-hit:hover ~ .connector-line { opacity: 0.6; stroke-width: 3; }
+    .disconnect-btn {
+      position: fixed; z-index: 300; background: var(--glass-bg); backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border); border-radius: 6px; padding: 6px 12px;
+      font-family: var(--font-display); font-size: 0.7rem; font-weight: 600;
+      color: var(--error); cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+      transition: all 0.15s;
+    }
+    .disconnect-btn:hover { background: rgba(240,80,96,0.15); }
+    .rubber-line { stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 6 4; opacity: 0.5; }
+
+    .nodes-container { position: absolute; left: -10000px; top: -10000px; width: 20000px; height: 20000px; z-index: 2; }
+
+    /* ── Group Rectangles ── */
+    .group-rect {
+      position: absolute; border-radius: 16px; pointer-events: none; z-index: -1;
+      border: 2px dashed; opacity: 0.6;
+    }
+    .group-rect-handle {
+      position: absolute; inset: -8px; border-radius: 20px; cursor: grab;
+      pointer-events: auto; z-index: -1;
+    }
+    .group-rect--dragging { cursor: grabbing; opacity: 0.8; }
+    .group-label {
+      position: absolute; top: -10px; left: 14px;
+      font-family: var(--font-mono); font-size: 0.6rem; font-weight: 600;
+      padding: 2px 8px; border-radius: 4px; pointer-events: auto; cursor: pointer;
+    }
+    .group-label:hover { text-decoration: underline; }
+
+    /* Node context menu */
+    .node-ctx-menu {
+      position: fixed; z-index: 300;
+      background: var(--glass-bg); backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 10px;
+      padding: 5px 0; box-shadow: 0 10px 40px rgba(0,0,0,0.35); min-width: 180px;
+    }
+    .node-ctx-menu button {
+      display: block; width: 100%; background: none; border: none;
+      color: var(--text); font-family: var(--font-display); font-size: 0.73rem; font-weight: 500;
+      padding: 9px 16px; text-align: left; cursor: pointer; transition: all 0.15s;
+    }
+    .node-ctx-menu button:hover { background: var(--accent-soft); color: var(--accent); }
+
+    /* ── Drop Overlay ── */
+    .drop-overlay {
+      position: absolute; inset: 0; z-index: 100;
+      background: rgba(240,160,48,0.04); border: 2px dashed var(--accent);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .drop-overlay-content { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--accent); font-size: 1.1rem; font-weight: 700; pointer-events: none; }
+    .drop-icon { font-size: 3rem; pointer-events: none; }
+
+    /* ── Node ── */
+    .node {
+      position: absolute; width: 240px;
+      background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+      border: 1px solid var(--glass-border); border-radius: var(--radius);
+      padding: 14px 16px; display: flex; align-items: flex-start; gap: 11px;
+      cursor: grab; user-select: none;
+      transition: border-color 0.3s, box-shadow 0.3s, transform 0.2s;
+      animation: nodeAppear 0.4s var(--transition-smooth);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+    }
+    .node:hover { border-color: var(--node-hover-border); box-shadow: var(--node-hover-glow); transform: translateY(-1px); }
+    .node--dragging { cursor: grabbing; z-index: 50; border-color: var(--accent); box-shadow: 0 0 30px var(--accent-glow), 0 8px 32px rgba(0,0,0,0.3); transform: scale(1.03); }
+    .node--loading .node-icon { color: var(--warning); animation: spin 2s linear infinite; }
+    .node--ready .node-icon { color: var(--accent); }
+    .node--error { border-color: rgba(240,80,96,0.3); }
+    .node--error .node-icon { color: var(--error); }
+    .node--conversation { width: 200px; padding: 10px 14px; opacity: 0.88; border-left: 2px solid var(--accent-soft); }
+    @keyframes nodeAppear { from{opacity:0;transform:translateY(10px) scale(0.93)}to{opacity:1;transform:translateY(0) scale(1)} }
+    @keyframes spin { to{transform:rotate(360deg)} }
+
+    .node-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 1px; }
+    .node-info { flex: 1; min-width: 0; }
+    .node-filename { font-size: 0.8rem; font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .node-status { font-family: var(--font-mono); font-size: 0.62rem; color: var(--muted); letter-spacing: 0.02em; }
+    .node--ready .node-status { color: rgba(240,160,48,0.45); }
+
+    .node-delete {
+      position: absolute; top: 6px; right: 6px; background: none; border: none;
+      color: var(--muted); font-size: 0.6rem; cursor: pointer; width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center; border-radius: 4px; opacity: 0; transition: all 0.2s;
+    }
+    .node:hover .node-delete { opacity: 0.6; }
+    .node-delete:hover { opacity: 1 !important; color: var(--error); background: rgba(240,80,96,0.1); }
+
+    /* ── Ports ── */
+    .port {
+      position: absolute; width: 10px; height: 10px;
+      background: var(--accent); border: 2px solid var(--surface-solid);
+      border-radius: 50%; opacity: 0; cursor: crosshair; z-index: 10;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .node:hover .port, .system-node:hover .port { opacity: 1; }
+    .port:hover { transform: scale(1.5); opacity: 1 !important; }
+    .port-top { top: -5px; left: 50%; margin-left: -5px; }
+    .port-bottom { bottom: -5px; left: 50%; margin-left: -5px; }
+    .port-left { left: -5px; top: 50%; margin-top: -5px; }
+    .port-right { right: -5px; top: 50%; margin-top: -5px; }
+
+    /* ── System Nodes ── */
+    .system-node {
+      position: absolute; z-index: 120; width: 400px;
+      background: var(--glass-bg); backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: var(--radius);
+      box-shadow: 0 8px 40px rgba(0,0,0,0.3); cursor: grab; user-select: none; overflow: hidden;
+    }
+    .system-node-header { font-size: 0.82rem; font-weight: 700; color: var(--text-bright); padding: 12px 16px 0; display: flex; align-items: center; justify-content: space-between; }
+    .system-node-body { display: flex; flex-direction: column; gap: 8px; padding: 10px 16px 14px; }
+    .system-node-input {
+      font-family: var(--font-mono); font-size: 0.7rem; color: var(--text);
+      background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 8px 10px; resize: none; outline: none; line-height: 1.5;
+    }
+    .system-node-input:focus { border-color: var(--accent-soft); }
+    .system-node-btn {
+      font-family: var(--font-display); font-size: 0.72rem; font-weight: 700;
+      color: var(--bg); background: var(--accent); border: none; border-radius: var(--radius-sm);
+      padding: 8px 14px; cursor: pointer; transition: all 0.2s;
+    }
+    .system-node-btn:hover { filter: brightness(1.1); }
+    .system-node-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .system-node--chat { border-top: 2px solid var(--accent2); }
+    .system-node--chat .system-node-header { color: var(--accent2); }
+    .system-node--chat .system-node-btn { background: var(--accent2); }
+
+    .system-node--voice { border-top: 2px solid var(--success); }
+    .system-node--voice .system-node-header { color: var(--success); }
+    .system-node--voice .system-node-btn { background: var(--success); }
+
+    .system-node--agent { border-top: 3px solid var(--accent); }
+    .system-node--agent .system-node-header { color: var(--accent); }
+
+    /* Agent action buttons row */
+    .agent-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+    .agent-action-btn {
+      font-family: var(--font-display); font-size: 0.62rem; font-weight: 600;
+      padding: 5px 9px; border-radius: var(--radius-sm); cursor: pointer;
+      background: rgba(0,0,0,0.15); color: var(--text); border: 1px solid var(--border);
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .agent-action-btn:hover { border-color: var(--accent-soft); color: var(--accent); }
+    .agent-action-btn--active { background: var(--accent) !important; color: var(--bg) !important; border-color: var(--accent) !important; }
+
+    /* Agent input row with mic */
+    .agent-input-row { display: flex; gap: 5px; align-items: flex-end; }
+    .agent-input-row textarea { flex: 1; }
+    .agent-mic-btn {
+      width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--border);
+      background: rgba(0,0,0,0.15); color: var(--text); font-size: 0.9rem;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; flex-shrink: 0;
+    }
+    .agent-mic-btn:hover { border-color: var(--accent-soft); color: var(--accent); }
+    .agent-mic-btn.listening { background: var(--error); color: #fff; border-color: var(--error); animation: micPulse 1.2s ease infinite; }
+    @keyframes micPulse { 0%,100%{box-shadow:0 0 0 3px rgba(240,80,96,0.2)}50%{box-shadow:0 0 0 8px rgba(240,80,96,0)} }
+
+    /* Agent conversation log */
+    .agent-convo-log {
+      max-height: 360px; min-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 8px; background: rgba(0,0,0,0.08);
+    }
+    .agent-convo-log:empty::before {
+      content: 'Talk naturally — research topics, create notes, ask questions…';
+      font-family: var(--font-mono); font-size: 0.7rem; color: var(--muted); text-align: center; padding: 30px 12px;
+    }
+    .agent-msg {
+      font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.6;
+      padding: 5px 8px; border-radius: 6px; word-break: break-word; max-width: 95%;
+    }
+    .agent-msg--user { align-self: flex-end; background: var(--accent); color: var(--bg); border-bottom-right-radius: 2px; }
+    .agent-msg--ai { align-self: flex-start; background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 2px; position: relative; }
+    .agent-msg--ai .save-as-node-btn {
+      position: absolute; top: 2px; right: 2px; background: rgba(0,0,0,0.2); border: none;
+      color: var(--muted); font-size: 0.55rem; cursor: pointer; padding: 2px 5px; border-radius: 3px;
+      opacity: 0; transition: opacity 0.15s;
+    }
+    .agent-msg--ai:hover .save-as-node-btn { opacity: 1; }
+    .agent-msg--ai .save-as-node-btn:hover { color: var(--accent); background: var(--accent-glow); }
+
+    /* Agent action indicator */
+    .agent-msg--action {
+      align-self: center; background: rgba(240,160,48,0.08); color: var(--accent);
+      border: 1px dashed var(--accent-soft); font-style: italic; font-size: 0.58rem;
+      padding: 4px 10px; text-align: center;
+    }
+
+    /* Suggestion chips */
+    .agent-suggestions { display: flex; gap: 4px; flex-wrap: wrap; }
+    .agent-suggestions:empty { display: none; }
+    .suggestion-chip {
+      font-family: var(--font-display); font-size: 0.68rem; font-weight: 600;
+      padding: 6px 12px; border-radius: 12px; cursor: pointer;
+      background: rgba(240,160,48,0.08); color: var(--accent); border: 1px solid var(--accent-soft);
+      transition: all 0.15s; white-space: nowrap;
+    }
+    .suggestion-chip:hover { background: var(--accent); color: var(--bg); }
+
+    .system-node-btn--select { background: rgba(0,0,0,0.15); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
+    .system-node-btn--select:hover { border-color: var(--accent-soft); }
+    .system-node-btn--active { background: var(--accent) !important; color: var(--bg) !important; font-weight: 700 !important; border: none !important; }
+
+    .agent-response {
+      font-family: var(--font-mono); font-size: 0.65rem; line-height: 1.7; color: var(--text);
+      background: rgba(0,0,0,0.12); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 8px 10px; max-height: 180px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .agent-response:empty { display: none; }
+
+    .node--selectable { cursor: pointer !important; animation: selectGlow 2s ease infinite; }
+    .node--agent-selected { border-color: var(--accent) !important; box-shadow: 0 0 20px var(--accent-glow), inset 0 0 20px var(--accent-glow) !important; }
+    @keyframes selectGlow { 0%,100%{box-shadow:0 0 0 transparent}50%{box-shadow:0 0 12px var(--accent-glow)} }
+
+    .page-indicator { font-family: var(--font-mono); font-size: 0.58rem; color: var(--muted); text-align: center; padding: 8px 16px 10px; border-top: 1px solid var(--border); }
+
+    /* ── Side Panel (with tabs) ── */
+    .side-panel {
+      position: fixed; top: 52px; right: 0; bottom: 0; width: 440px; max-width: 90vw;
+      background: var(--glass-bg); backdrop-filter: blur(24px);
+      border-left: 1px solid var(--glass-border); z-index: 150;
+      display: flex; flex-direction: column;
+      animation: panelSlide 0.3s var(--transition-smooth);
+      box-shadow: -10px 0 40px var(--panel-shadow);
+    }
+    @keyframes panelSlide { from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1} }
+
+    .side-panel-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .side-panel-title-input {
+      font-family: var(--font-display); font-size: 0.82rem; font-weight: 600; color: var(--accent);
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 7px 10px; flex: 1; margin-right: 10px; outline: none;
+    }
+    .side-panel-title-input:focus { border-color: var(--accent-soft); }
+    .side-panel-actions { display: flex; gap: 5px; flex-shrink: 0; }
+    .side-panel-save, .side-panel-close {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--muted); font-size: 0.82rem; cursor: pointer; width: 32px; height: 32px;
+      display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+    }
+    .side-panel-save { color: var(--accent); }
+    .side-panel-save:hover { background: var(--accent-soft); }
+    .side-panel-close:hover { color: var(--text); }
+
+    /* Tabs */
+    .panel-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+    .panel-tab {
+      flex: 1; padding: 10px 0; text-align: center;
+      font-family: var(--font-display); font-size: 0.72rem; font-weight: 600;
+      color: var(--muted); cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .panel-tab:hover { color: var(--text); }
+    .panel-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .panel-tab-body { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Content tab */
+    .side-panel-content {
+      flex: 1; overflow-y: auto; padding: 18px;
+      font-family: var(--font-mono); font-size: 0.7rem; line-height: 1.8;
+      color: var(--text); white-space: pre-wrap; word-break: break-word;
+      background: transparent; border: none; outline: none; resize: none;
+    }
+
+    /* Chat tab */
+    .panel-chat { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .panel-chat-messages {
+      flex: 1; overflow-y: auto; padding: 14px 18px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .chat-msg {
+      max-width: 90%; padding: 10px 14px; border-radius: 12px;
+      font-family: var(--font-mono); font-size: 0.7rem; line-height: 1.6; word-break: break-word;
+    }
+    .chat-msg--user {
+      align-self: flex-end; background: var(--accent); color: var(--bg); border-bottom-right-radius: 4px;
+    }
+    .chat-msg--ai {
+      align-self: flex-start; background: var(--surface2); color: var(--text); border-bottom-left-radius: 4px;
+      border: 1px solid var(--border);
+    }
+    .chat-msg--ai.streaming { opacity: 0.8; }
+    .panel-chat-input-row {
+      display: flex; gap: 6px; padding: 12px 18px; border-top: 1px solid var(--border); flex-shrink: 0;
+    }
+    .panel-chat-input {
+      flex: 1; font-family: var(--font-mono); font-size: 0.72rem; color: var(--text);
+      background: rgba(0,0,0,0.15); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 8px 10px; outline: none; resize: none;
+    }
+    .panel-chat-input:focus { border-color: var(--accent-soft); }
+    .panel-chat-send {
+      font-family: var(--font-display); font-size: 0.72rem; font-weight: 700;
+      background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm);
+      padding: 8px 14px; cursor: pointer; white-space: nowrap;
+    }
+    .panel-chat-send:hover { filter: brightness(1.1); }
+    .panel-chat-send:disabled { opacity: 0.4; }
+
+    /* ── Node Hover Preview ── */
+    .node-tooltip {
+      position: fixed; z-index: 300; max-width: 300px; padding: 10px 14px;
+      background: var(--glass-bg); backdrop-filter: blur(16px);
+      border: 1px solid var(--glass-border); border-radius: var(--radius-sm);
+      font-family: var(--font-mono); font-size: 0.65rem; line-height: 1.6;
+      color: var(--text); pointer-events: none; white-space: pre-wrap; word-break: break-word;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    }
+
+    /* ── Context Menu ── */
+    .connect-menu {
+      position: fixed; z-index: 300;
+      background: var(--glass-bg); backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border); border-radius: 10px;
+      padding: 5px 0; box-shadow: 0 10px 40px rgba(0,0,0,0.35); min-width: 180px;
+    }
+    .connect-menu button {
+      display: block; width: 100%; background: none; border: none;
+      color: var(--text); font-family: var(--font-display); font-size: 0.73rem; font-weight: 500;
+      padding: 9px 16px; text-align: left; cursor: pointer; transition: all 0.15s;
+    }
+    .connect-menu button:hover { background: var(--accent-soft); color: var(--accent); }
+
+    /* ── Zoom Controls ── */
+    .zoom-controls {
+      position: fixed; bottom: 16px; right: 16px; z-index: 200;
+      display: flex; align-items: center; gap: 2px;
+      background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur));
+      border: 1px solid var(--glass-border); border-radius: 8px; padding: 4px 6px;
+    }
+    .zoom-btn {
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 5px;
+      color: var(--text); font-size: 0.85rem; font-weight: 700;
+      width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer;
+    }
+    .zoom-btn:hover { color: var(--accent); }
+    .zoom-level { font-family: var(--font-mono); font-size: 0.65rem; color: var(--text); min-width: 38px; text-align: center; }
+
+    /* ── Bottom Bar ── */
+    .bottom-bar {
+      position: fixed; bottom: 16px; left: 16px; z-index: 200;
+      display: flex; gap: 8px;
+    }
+    .bottom-btn {
+      background: var(--accent); color: var(--bg); border: none; border-radius: var(--radius-sm);
+      font-family: var(--font-display); font-size: 0.75rem; font-weight: 700;
+      padding: 10px 18px; cursor: pointer; transition: all 0.2s;
+      box-shadow: 0 4px 20px var(--accent-glow);
+    }
+    .bottom-btn:hover { filter: brightness(1.15); }
+    .bottom-btn--secondary {
+      background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+      box-shadow: none;
+    }
+    .bottom-btn--secondary:hover { border-color: var(--accent-soft); color: var(--accent); }
+
+    /* ── Command Palette ── */
+    .cmd-palette {
+      position: fixed; top: 20%; left: 50%; transform: translateX(-50%); z-index: 400;
+      width: 480px; max-width: 90vw;
+      background: var(--glass-bg); backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border); border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      animation: cmdAppear 0.15s var(--transition-smooth);
+    }
+    @keyframes cmdAppear { from{opacity:0;transform:translateX(-50%) translateY(-10px) scale(0.97)}to{opacity:1;transform:translateX(-50%) translateY(0) scale(1)} }
+    .cmd-palette-input {
+      width: 100%; padding: 16px 20px;
+      font-family: var(--font-display); font-size: 0.9rem; font-weight: 500;
+      color: var(--text-bright); background: transparent; border: none; border-bottom: 1px solid var(--border);
+      outline: none;
+    }
+    .cmd-palette-input::placeholder { color: var(--muted); }
+    .cmd-results { max-height: 260px; overflow-y: auto; padding: 6px 0; }
+    .cmd-result {
+      padding: 10px 20px; cursor: pointer; display: flex; align-items: center; gap: 10px;
+      font-size: 0.78rem; color: var(--text); transition: background 0.1s;
+    }
+    .cmd-result:hover, .cmd-result--active { background: var(--accent-soft); color: var(--accent); }
+    .cmd-result-icon { font-size: 1rem; width: 24px; text-align: center; }
+    .cmd-result-label { flex: 1; }
+    .cmd-result-hint { font-family: var(--font-mono); font-size: 0.6rem; color: var(--muted); }
+    .cmd-backdrop { position: fixed; inset: 0; z-index: 399; background: rgba(0,0,0,0.3); }
+
+    /* ── Research Modal ── */
+    .modal-backdrop { position: fixed; inset: 0; z-index: 350; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; }
+    .modal {
+      width: 420px; max-width: 90vw; background: var(--glass-bg); backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border); border-radius: var(--radius);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4); padding: 24px;
+    }
+    .modal h3 { font-size: 1rem; font-weight: 700; color: var(--text-bright); margin-bottom: 14px; }
+    .modal-input {
+      width: 100%; padding: 10px 12px; font-family: var(--font-mono); font-size: 0.78rem;
+      color: var(--text); background: rgba(0,0,0,0.15); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); outline: none; margin-bottom: 12px;
+    }
+    .modal-input:focus { border-color: var(--accent-soft); }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+    .modal-btn {
+      font-family: var(--font-display); font-size: 0.75rem; font-weight: 700;
+      padding: 9px 18px; border-radius: var(--radius-sm); cursor: pointer; border: none;
+    }
+    .modal-btn--primary { background: var(--accent); color: var(--bg); }
+    .modal-btn--ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+    .modal-status { font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted); margin-top: 10px; min-height: 1.2em; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="toolbar-left">
+      <span class="toolbar-title">◈ AI Canvas</span>
+      <button class="tool-btn" id="btn-research">🔬 Research</button>
+      <button class="tool-btn" id="btn-organize">✨ Organize</button>
+      <span class="toolbar-hint">Scroll=zoom · Space+drag=pan · Dbl-click=note · Ctrl+K=search</span>
+    </div>
+    <div class="toolbar-right">
+      <button id="theme-toggle" class="tool-btn tool-btn--icon" title="Toggle theme">☀</button>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas" class="canvas">
+    <div class="transform-layer" id="transform-layer">
+      <div class="grid-bg"></div>
+      <svg id="connectors-svg" class="connectors-svg"></svg>
+      <div id="nodes-container" class="nodes-container"></div>
+    </div>
+    <div id="drop-overlay" class="drop-overlay hidden">
+      <div class="drop-overlay-content">
+        <span class="drop-icon">⬡</span>
+        <span>Release to upload</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Side Panel -->
+  <div id="side-panel" class="side-panel hidden">
+    <div class="side-panel-header">
+      <input type="text" class="side-panel-title-input" id="panel-title" placeholder="Filename" />
+      <div class="side-panel-actions">
+        <button class="side-panel-save" id="panel-save" title="Save">💾</button>
+        <button class="side-panel-close" id="panel-close">✕</button>
+      </div>
+    </div>
+    <div class="panel-tabs">
+      <div class="panel-tab panel-tab--active" data-tab="content">📄 Content</div>
+      <div class="panel-tab" data-tab="chat">💬 Chat with Doc</div>
+    </div>
+    <div class="panel-tab-body" id="tab-content">
+      <textarea class="side-panel-content" id="panel-content" placeholder="Content…"></textarea>
+    </div>
+    <div class="panel-tab-body hidden" id="tab-chat">
+      <div class="panel-chat">
+        <div class="panel-chat-messages" id="chat-messages"></div>
+        <div class="panel-chat-input-row">
+          <textarea class="panel-chat-input" id="panel-chat-input" placeholder="Ask about this document…" rows="1"></textarea>
+          <button class="panel-chat-send" id="panel-chat-send">Ask ⏎</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zoom Controls -->
+  <div class="zoom-controls">
+    <button class="zoom-btn" id="zoom-out">−</button>
+    <span class="zoom-level" id="zoom-level">100%</span>
+    <button class="zoom-btn" id="zoom-in">+</button>
+  </div>
+
+  <!-- Bottom Bar -->
+  <div class="bottom-bar">
+    <button class="bottom-btn" id="create-notes-btn">📝 Create Notes</button>
+  </div>
+  <input type="file" id="file-input" accept=".pdf,.txt,.md" style="display:none" />
+
+  <!-- Tooltip -->
+  <div id="node-tooltip" class="node-tooltip hidden"></div>
+
+  <script>
+    // ═══════════════════════════════════════════
+    // AI Canvas Dashboard — Full Featured
+    // ═══════════════════════════════════════════
+
+    const canvas = document.getElementById('canvas');
+    const transformLayer = document.getElementById('transform-layer');
+    const dropOverlay = document.getElementById('drop-overlay');
+    const nodesContainer = document.getElementById('nodes-container');
+    const connectorsSvg = document.getElementById('connectors-svg');
+    const sidePanel = document.getElementById('side-panel');
+    const panelTitle = document.getElementById('panel-title');
+    const panelContent = document.getElementById('panel-content');
+    const panelClose = document.getElementById('panel-close');
+    const panelSave = document.getElementById('panel-save');
+    const tooltip = document.getElementById('node-tooltip');
+
+    const sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    let allNodesData = [];
+    let dragCounter = 0;
+    let activeNodeId = null, activeNodeEl = null;
+    const nodeChatHistory = {}; // nodeId -> [{role, text}]
+    const nodeContentCache = {}; // nodeId -> string
+
+    // ══════════════ PAN & ZOOM ══════════════
+    let panX = 0, panY = 0, zoom = 1;
+    let isPanning = false, panStartX = 0, panStartY = 0, panStartPX = 0, panStartPY = 0;
+    let spaceDown = false;
+
+    function applyTransform() {
+      transformLayer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+      document.getElementById('zoom-level').textContent = Math.round(zoom * 100) + '%';
+    }
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const oldZoom = zoom;
+      zoom *= e.deltaY < 0 ? 1.1 : 0.9;
+      zoom = Math.max(0.2, Math.min(3, zoom));
+      panX -= mx * (zoom - oldZoom) / oldZoom;
+      panY -= my * (zoom - oldZoom) / oldZoom;
+      applyTransform();
+    }, { passive: false });
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 1 || (e.button === 0 && spaceDown)) {
+        isPanning = true; panStartX = e.clientX; panStartY = e.clientY;
+        panStartPX = panX; panStartPY = panY;
+        canvas.classList.add('canvas--panning'); e.preventDefault();
+      }
+    });
+    document.addEventListener('mousemove', (e) => { if (!isPanning) return; panX = panStartPX + (e.clientX - panStartX); panY = panStartPY + (e.clientY - panStartY); applyTransform(); });
+    document.addEventListener('mouseup', () => { isPanning = false; canvas.classList.remove('canvas--panning'); });
+    document.addEventListener('keydown', (e) => { if (e.code === 'Space' && !e.target.closest('input,textarea')) { spaceDown = true; e.preventDefault(); } });
+    document.addEventListener('keyup', (e) => { if (e.code === 'Space') spaceDown = false; });
+
+    document.getElementById('zoom-in').onclick = () => { zoom = Math.min(3, zoom * 1.2); applyTransform(); };
+    document.getElementById('zoom-out').onclick = () => { zoom = Math.max(0.2, zoom / 1.2); applyTransform(); };
+
+    // ══════════════ TOUCH: PAN & PINCH ZOOM ══════════════
+    let touchPanning = false, touchStartX = 0, touchStartY = 0, touchStartPX = 0, touchStartPY = 0;
+    let lastPinchDist = 0, pinching = false;
+
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.target.closest('.node, .system-node, button, textarea, input')) return;
+      if (e.touches.length === 2) {
+        // Pinch start
+        pinching = true; touchPanning = false;
+        lastPinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      } else if (e.touches.length === 1) {
+        // Pan start
+        touchPanning = true; pinching = false;
+        touchStartX = e.touches[0].clientX; touchStartY = e.touches[0].clientY;
+        touchStartPX = panX; touchStartPY = panY;
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (pinching && e.touches.length === 2) {
+        e.preventDefault();
+        const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        const scale = dist / lastPinchDist;
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const rect = canvas.getBoundingClientRect();
+        const mx = midX - rect.left, my = midY - rect.top;
+        const oldZoom = zoom;
+        zoom = Math.max(0.2, Math.min(3, zoom * scale));
+        panX -= mx * (zoom - oldZoom) / oldZoom;
+        panY -= my * (zoom - oldZoom) / oldZoom;
+        lastPinchDist = dist;
+        applyTransform();
+      } else if (touchPanning && e.touches.length === 1) {
+        e.preventDefault();
+        panX = touchStartPX + (e.touches[0].clientX - touchStartX);
+        panY = touchStartPY + (e.touches[0].clientY - touchStartY);
+        applyTransform();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) pinching = false;
+      if (e.touches.length === 0) touchPanning = false;
+    }, { passive: true });
+
+    function screenToCanvas(sx, sy) {
+      const rect = canvas.getBoundingClientRect();
+      // Transform layer is offset, and nodes-container starts at -10000,-10000
+      // So canvas origin (0,0) = nodes-container position 10000,10000
+      const canvasX = (sx - rect.left - panX) / zoom + 10000;
+      const canvasY = (sy - rect.top - panY) / zoom + 10000;
+      return { x: canvasX, y: canvasY };
+    }
+
+    // ══════════════ THEME ══════════════
+    const themeToggle = document.getElementById('theme-toggle');
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    themeToggle.textContent = savedTheme === 'dark' ? '☀' : '☾';
+    themeToggle.onclick = () => {
+      const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      themeToggle.textContent = next === 'dark' ? '☀' : '☾';
+    };
+
+    // ══════════════ DRAG & DROP FILES ══════════════
+    // Use document-level handlers to guarantee we always catch the drop
+    document.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      // Only show overlay if files are being dragged
+      if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+        dragCounter++;
+        dropOverlay.classList.remove('hidden');
+      }
+    });
+    document.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) { dragCounter = 0; dropOverlay.classList.add('hidden'); }
+    });
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+    });
+    document.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropOverlay.classList.add('hidden');
+      if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+      const files = [...e.dataTransfer.files].filter(f => f.name.toLowerCase().endsWith('.pdf'));
+      if (!files.length) return;
+      const pos = screenToCanvas(e.clientX, e.clientY);
+      for (let i = 0; i < files.length; i++) await uploadFile(files[i], pos.x + i * 30, pos.y + i * 30);
+    });
+
+    // ══════════════ CREATE NOTES ══════════════
+    const createNotesBtn = document.getElementById('create-notes-btn');
+    const fileInput = document.getElementById('file-input');
+    createNotesBtn.onclick = () => showCreateNotesModal();
+
+    function showCreateNotesModal() {
+      const existing = document.getElementById('create-notes-modal');
+      if (existing) existing.remove();
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop'; backdrop.id = 'create-notes-modal';
+      backdrop.innerHTML = `
+        <div class="modal" style="width:500px;">
+          <h3>📝 Create Notes</h3>
+          <p style="font-size:0.72rem;color:var(--muted);margin:-8px 0 12px;">Paste your notes, lecture text, or upload a PDF — AI will create a mind map</p>
+          <input class="modal-input" id="notes-title" placeholder="Title (optional — AI will generate one)" />
+          <textarea class="modal-input" id="notes-text" placeholder="Paste lecture notes, ideas, bullet points…" rows="6" style="resize:vertical;line-height:1.6;"></textarea>
+          <div style="text-align:center;color:var(--muted);font-size:0.65rem;margin:-6px 0 8px;">— or —</div>
+          <div id="notes-drop-zone" style="border:2px dashed var(--border);border-radius:var(--radius-sm);padding:18px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:12px;">
+            <div style="font-size:1.5rem;margin-bottom:4px;">📄</div>
+            <div style="font-size:0.72rem;color:var(--muted);">Click or drag PDF / TXT / MD file here</div>
+            <div id="notes-file-name" style="font-size:0.68rem;color:var(--accent);margin-top:6px;display:none;"></div>
+          </div>
+          <input type="file" id="notes-file-input" accept=".pdf,.txt,.md" style="display:none" />
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn--ghost" id="notes-cancel">Cancel</button>
+            <button class="modal-btn modal-btn--primary" id="notes-generate">🧠 Generate Mind Map</button>
+          </div>
+          <div class="modal-status" id="notes-status"></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+
+      const dropZone = document.getElementById('notes-drop-zone');
+      const notesFileInput = document.getElementById('notes-file-input');
+      const fileNameDiv = document.getElementById('notes-file-name');
+      let selectedFile = null;
+
+      dropZone.onclick = () => notesFileInput.click();
+      dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.borderColor = 'var(--accent)'; };
+      dropZone.ondragleave = () => { dropZone.style.borderColor = 'var(--border)'; };
+      dropZone.ondrop = (e) => {
+        e.preventDefault(); dropZone.style.borderColor = 'var(--border)';
+        if (e.dataTransfer.files.length) {
+          selectedFile = e.dataTransfer.files[0];
+          fileNameDiv.textContent = '📎 ' + selectedFile.name;
+          fileNameDiv.style.display = 'block';
+        }
+      };
+      notesFileInput.onchange = () => {
+        if (notesFileInput.files.length) {
+          selectedFile = notesFileInput.files[0];
+          fileNameDiv.textContent = '📎 ' + selectedFile.name;
+          fileNameDiv.style.display = 'block';
+        }
+      };
+
+      document.getElementById('notes-cancel').onclick = () => backdrop.remove();
+      backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+
+      document.getElementById('notes-generate').onclick = async () => {
+        const title = document.getElementById('notes-title').value.trim();
+        const text = document.getElementById('notes-text').value.trim();
+        const status = document.getElementById('notes-status');
+        const goBtn = document.getElementById('notes-generate');
+
+        if (!text && !selectedFile) {
+          status.textContent = '⚠️ Please enter text or upload a file.';
+          return;
+        }
+
+        goBtn.disabled = true; goBtn.textContent = '⏳ Generating…';
+        status.textContent = 'AI is analyzing your content and creating a mind map…';
+
+        try {
+          const fd = new FormData();
+          if (selectedFile) fd.append('file', selectedFile);
+          if (text) fd.append('text', text);
+          if (title) fd.append('title', title);
+
+          const res = await fetch('/api/notes/generate', { method: 'POST', body: fd });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Generation failed');
+          }
+          const data = await res.json();
+          status.textContent = `✅ Created ${data.nodes_created} notes! Reloading…`;
+          setTimeout(() => location.reload(), 800);
+        } catch (err) {
+          status.textContent = '❌ ' + err.message;
+          goBtn.disabled = false; goBtn.textContent = '🧠 Generate Mind Map';
+        }
+      };
+    }
+
+    async function uploadFile(file, x, y) {
+      const tmpId = 'temp-' + Date.now();
+      // For drag-drop, use a reasonable default position if coords seem off
+      if (x < 0 || y < 0 || x > 19000 || y > 19000) {
+        x = 10100; y = 10100;
+      }
+      const el = createNodeElement(tmpId, file.name, x, y, true, 'knowledge');
+      nodesContainer.appendChild(el);
+      try {
+        const fd = new FormData(); fd.append('file', file);
+        const res = await fetch(`/api/upload?x=${x}&y=${y}`, { method: 'POST', body: fd });
+        if (!res.ok) {
+          const errBody = await res.text();
+          let detail = 'Upload failed';
+          try { detail = JSON.parse(errBody).detail || detail; } catch(e) {}
+          throw new Error(detail);
+        }
+        const data = await res.json();
+        el.id = `node-${data.node_id}`; el.dataset.nodeId = data.node_id;
+        el.querySelector('.node-status').textContent = `${data.characters.toLocaleString()} chars`;
+        el.classList.remove('node--loading'); el.classList.add('node--ready');
+        allNodesData.push(data);
+      } catch (err) {
+        el.classList.remove('node--loading'); el.classList.add('node--error');
+        el.querySelector('.node-status').textContent = err.message;
+        console.error('Upload error:', err);
+      }
+    }
+
+    // ══════════════ LOAD NODES ══════════════
+    const PAGE_SIZE = 5;
+    const pageState = {};
+
+    async function loadNodes() {
+      try {
+        const res = await fetch('/api/nodes');
+        if (!res.ok) return;
+        allNodesData = await res.json();
+        const systemIds = new Set(allNodesData.filter(n => n.node_type === 'system').map(n => n.node_id));
+        const visibleSystemIds = new Set(['system-agent']);
+        allNodesData.forEach(n => {
+          if (n.node_type === 'system' && visibleSystemIds.has(n.node_id)) {
+            createSystemNodeElement(n);
+            const total = Math.ceil(getChildren(n.node_id).length / PAGE_SIZE) || 1;
+            pageState[n.node_id] = total - 1;
+          }
+        });
+        systemIds.forEach(sid => renderChildrenForParent(sid));
+        allNodesData.forEach(n => {
+          if (n.node_type === 'system') return;
+          // Skip system children UNLESS they have a group_id (render grouped nodes independently)
+          if (n.parent_id && systemIds.has(n.parent_id) && !n.group_id) return;
+          const el = createNodeElement(n.node_id, n.filename, n.x || 10100, n.y || 10100, false, n.node_type || 'knowledge');
+          el.dataset.nodeId = n.node_id; el.dataset.parentId = n.parent_id || '';
+          el.querySelector('.node-status').textContent = `${(n.characters || 0).toLocaleString()} chars`;
+          nodesContainer.appendChild(el);
+        });
+        drawConnectors();
+        // Draw group rectangles after a short delay to ensure DOM is ready
+        setTimeout(() => drawGroups(), 100);
+      } catch (e) { console.error('Load failed:', e); }
+    }
+    loadNodes();
+
+    function getChildren(parentId) { return allNodesData.filter(n => n.parent_id === parentId); }
+    function getVisibleChildren(parentId) {
+      const children = getChildren(parentId);
+      const totalPages = Math.ceil(children.length / PAGE_SIZE) || 1;
+      const page = pageState[parentId] ?? (totalPages - 1);
+      return children.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+    }
+
+    function renderChildrenForParent(parentId) {
+      document.querySelectorAll(`[data-parent-id="${parentId}"]`).forEach(el => el.remove());
+      const visible = getVisibleChildren(parentId);
+      const parentEl = document.getElementById(`node-${parentId}`);
+      if (!parentEl) return;
+      const px = parseInt(parentEl.style.left) || 0;
+      const py = (parseInt(parentEl.style.top) || 0) + parentEl.offsetHeight + 18;
+      visible.forEach((n, i) => {
+        const el = createNodeElement(n.node_id, n.filename, px, py + i * 65, false, 'conversation');
+        el.dataset.nodeId = n.node_id; el.dataset.parentId = parentId;
+        el.querySelector('.node-status').textContent = `${(n.characters || 0).toLocaleString()} chars`;
+        nodesContainer.appendChild(el);
+      });
+      drawConnectors();
+    }
+
+    // ══════════════ NODE ELEMENT ══════════════
+    function createNodeElement(id, filename, x, y, loading, nodeType) {
+      const isConvo = nodeType === 'conversation';
+      const node = document.createElement('div');
+      node.className = `node ${loading ? 'node--loading' : 'node--ready'} ${isConvo ? 'node--conversation' : ''}`;
+      node.id = `node-${id}`; node.dataset.nodeId = id;
+      node.style.left = `${x}px`; node.style.top = `${y}px`;
+      node.innerHTML = `
+        <div class="port port-top" data-port="top"></div>
+        <div class="port port-bottom" data-port="bottom"></div>
+        <div class="port port-left" data-port="left"></div>
+        <div class="port port-right" data-port="right"></div>
+        <div class="node-icon">${isConvo ? '◇' : '⬡'}</div>
+        <div class="node-info">
+          <div class="node-filename">${escapeHtml(filename)}</div>
+          <div class="node-status">${loading ? 'Uploading…' : ''}</div>
+        </div>
+        <button class="node-delete" title="Delete">✕</button>`;
+      node.querySelector('.node-delete').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const nid = node.dataset.nodeId; if (!nid) return;
+        try {
+          await fetch(`/api/nodes/${nid}`, { method: 'DELETE' });
+          node.remove(); sidePanel.classList.add('hidden');
+          const deleted = allNodesData.find(n => n.node_id === nid);
+          allNodesData = allNodesData.filter(n => n.node_id !== nid);
+          if (deleted && deleted.parent_id) renderChildrenForParent(deleted.parent_id);
+          drawConnectors();
+        } catch (err) { console.error(err); }
+      });
+      makeDraggable(node, false);
+      return node;
+    }
+
+    // ══════════════ SYSTEM NODE ══════════════
+    function createSystemNodeElement(n) {
+      const el = document.createElement('div');
+      el.className = 'system-node';
+      el.id = `node-${n.node_id}`; el.dataset.nodeId = n.node_id;
+      el.style.left = `${n.x}px`; el.style.top = `${n.y}px`;
+      if (n.node_id === 'system-chat') {
+        el.classList.add('system-node--chat');
+        el.innerHTML = `<div class="system-node-header">💬 Chat</div><div class="system-node-body">
+          <textarea id="chat-input" class="system-node-input" placeholder="Type a message…" rows="2"></textarea>
+          <button id="chat-send" class="system-node-btn">Send ⏎</button></div>`;
+      } else if (n.node_id === 'system-agent') {
+        el.classList.add('system-node--agent');
+        el.innerHTML = `
+          <div class="system-node-header"><span>🤖 AI Agent</span><button class="agent-action-btn" id="agent-select-btn" style="font-size:0.55rem;padding:3px 7px;">🎯 Select (0)</button></div>
+          <div class="system-node-body">
+            <div class="agent-convo-log" id="agent-convo-log"></div>
+            <div id="agent-suggestions" class="agent-suggestions"></div>
+            <div class="agent-input-row">
+              <textarea id="agent-input" class="system-node-input" placeholder="Talk naturally… research, create notes, ask questions" rows="2"></textarea>
+              <button id="agent-mic-btn" class="agent-mic-btn" title="Voice input">🎙</button>
+            </div>
+            <button id="agent-send" class="system-node-btn">Send ⏎</button>
+          </div>`;
+      } else {
+        return; // Don't render other system nodes
+      }
+      el.addEventListener('wheel', (e) => {
+        const children = getChildren(n.node_id);
+        if (children.length <= PAGE_SIZE) return;
+        e.preventDefault();
+        const totalPages = Math.ceil(children.length / PAGE_SIZE);
+        let page = pageState[n.node_id] ?? (totalPages - 1);
+        page = e.deltaY > 0 ? Math.min(totalPages - 1, page + 1) : Math.max(0, page - 1);
+        pageState[n.node_id] = page;
+        renderChildrenForParent(n.node_id);
+      }, { passive: false });
+      makeDraggable(el, true);
+      nodesContainer.appendChild(el);
+      if (n.node_id === 'system-chat') setTimeout(() => initChat(), 0);
+      else if (n.node_id === 'system-agent') setTimeout(() => initAgent(), 0);
+      else setTimeout(() => initVoice(), 0);
+    }
+
+    // ══════════════ DRAGGABLE ══════════════
+    function makeDraggable(node, isSystem) {
+      let isDragging = false, startX, startY, origX, origY;
+      // Mouse events
+      node.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.port') || e.target.closest('button') || e.target.closest('textarea') || e.target.closest('input') || spaceDown) return;
+        isDragging = true; startX = e.clientX; startY = e.clientY;
+        origX = parseInt(node.style.left); origY = parseInt(node.style.top);
+        node.classList.add('node--dragging'); e.preventDefault(); e.stopPropagation();
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - startX) / zoom, dy = (e.clientY - startY) / zoom;
+        node.style.left = `${origX + dx}px`; node.style.top = `${origY + dy}px`;
+        if (isSystem) renderChildrenForParent(node.dataset.nodeId);
+        drawConnectors();
+      });
+      document.addEventListener('mouseup', (e) => {
+        if (!isDragging) return;
+        const moved = Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY);
+        isDragging = false; node.classList.remove('node--dragging');
+        if (moved < 5 && !isSystem && node.classList.contains('node--ready')) openNodePanel(node);
+        else if (moved >= 5 && node.dataset.nodeId) {
+          fetch(`/api/nodes/${node.dataset.nodeId}/position`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x: parseInt(node.style.left), y: parseInt(node.style.top) }),
+          }).catch(() => {});
+        }
+      });
+      // Touch events for mobile
+      let touchDragging = false, longPressTimer = null, touchMoved = false;
+      node.addEventListener('touchstart', (e) => {
+        if (e.target.closest('button, textarea, input')) return;
+        const t = e.touches[0];
+        startX = t.clientX; startY = t.clientY;
+        origX = parseInt(node.style.left); origY = parseInt(node.style.top);
+        touchMoved = false;
+        // Long press to start drag (200ms)
+        longPressTimer = setTimeout(() => {
+          touchDragging = true;
+          node.classList.add('node--dragging');
+        }, 200);
+        e.stopPropagation();
+      }, { passive: true });
+      node.addEventListener('touchmove', (e) => {
+        const t = e.touches[0];
+        const dist = Math.abs(t.clientX - startX) + Math.abs(t.clientY - startY);
+        if (dist > 8) touchMoved = true;
+        if (!touchDragging && dist > 8) {
+          // Start drag immediately if moved enough
+          clearTimeout(longPressTimer);
+          touchDragging = true;
+          node.classList.add('node--dragging');
+        }
+        if (touchDragging) {
+          e.preventDefault();
+          const dx = (t.clientX - startX) / zoom, dy = (t.clientY - startY) / zoom;
+          node.style.left = `${origX + dx}px`; node.style.top = `${origY + dy}px`;
+          if (isSystem) renderChildrenForParent(node.dataset.nodeId);
+          drawConnectors();
+        }
+      }, { passive: false });
+      node.addEventListener('touchend', (e) => {
+        clearTimeout(longPressTimer);
+        if (touchDragging) {
+          touchDragging = false;
+          node.classList.remove('node--dragging');
+          if (node.dataset.nodeId) {
+            fetch(`/api/nodes/${node.dataset.nodeId}/position`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ x: parseInt(node.style.left), y: parseInt(node.style.top) }),
+            }).catch(() => {});
+          }
+        } else if (!touchMoved && !isSystem && node.classList.contains('node--ready')) {
+          // Tap = open panel
+          openNodePanel(node);
+        }
+      }, { passive: true });
+    }
+
+    // ══════════════ CONNECTORS ══════════════
+    function drawConnectors() {
+      connectorsSvg.innerHTML = '';
+      removeDisconnectBtns();
+      document.querySelectorAll('[data-parent-id]').forEach(childEl => {
+        const parentId = childEl.dataset.parentId; if (!parentId) return;
+        const childId = childEl.dataset.nodeId; if (!childId) return;
+        const parentEl = document.getElementById(`node-${parentId}`); if (!parentEl) return;
+        const cx = parseInt(childEl.style.left) + (childEl.offsetWidth / 2);
+        const cy = parseInt(childEl.style.top);
+        const px = parseInt(parentEl.style.left) + (parentEl.offsetWidth / 2);
+        const py = parseInt(parentEl.style.top) + parentEl.offsetHeight;
+        const midY = (py + cy) / 2;
+        const d = `M ${px} ${py} C ${px} ${midY}, ${cx} ${midY}, ${cx} ${cy}`;
+
+        // Invisible hit area (wider, clickable)
+        const hit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        hit.setAttribute('d', d);
+        hit.setAttribute('class', 'connector-hit');
+        hit.dataset.parentId = parentId;
+        hit.dataset.childId = childId;
+        connectorsSvg.appendChild(hit);
+
+        // Visible line
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        line.setAttribute('d', d);
+        line.setAttribute('class', 'connector-line');
+        connectorsSvg.appendChild(line);
+
+        // Click hit area to show disconnect button
+        hit.addEventListener('click', (e) => {
+          e.stopPropagation();
+          removeDisconnectBtns();
+          const btn = document.createElement('button');
+          btn.className = 'disconnect-btn';
+          btn.textContent = '✕ Disconnect';
+          btn.style.left = `${e.clientX}px`;
+          btn.style.top = `${e.clientY - 30}px`;
+          btn.onclick = async () => {
+            try {
+              await fetch('/api/nodes/disconnect', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ source_id: parentId, target_id: childId }),
+              });
+              const nd = allNodesData.find(n => n.node_id === childId);
+              if (nd) nd.parent_id = null;
+              childEl.dataset.parentId = '';
+              removeDisconnectBtns();
+              drawConnectors();
+            } catch (err) { console.error(err); }
+          };
+          document.body.appendChild(btn);
+          setTimeout(() => document.addEventListener('click', removeDisconnectBtns, { once: true }), 10);
+        });
+      });
+      drawGroups();
+    }
+
+    function removeDisconnectBtns() { document.querySelectorAll('.disconnect-btn').forEach(b => b.remove()); }
+
+    // ══════════════ PORT CONNECTION ══════════════
+    let connectSource = null, rubberLine = null;
+    document.addEventListener('mousedown', (e) => {
+      const port = e.target.closest('.port'); if (!port) return;
+      const nodeEl = port.closest('.node, .system-node'); if (!nodeEl || !nodeEl.dataset.nodeId) return;
+      e.preventDefault(); e.stopPropagation();
+      connectSource = nodeEl;
+      rubberLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      rubberLine.setAttribute('class', 'rubber-line');
+      const pos = getPortPos(nodeEl, port.dataset.port);
+      rubberLine.setAttribute('x1', pos.x); rubberLine.setAttribute('y1', pos.y);
+      rubberLine.setAttribute('x2', pos.x); rubberLine.setAttribute('y2', pos.y);
+      connectorsSvg.appendChild(rubberLine);
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!rubberLine) return;
+      const p = screenToCanvas(e.clientX, e.clientY);
+      rubberLine.setAttribute('x2', p.x); rubberLine.setAttribute('y2', p.y);
+    });
+    document.addEventListener('mouseup', (e) => {
+      if (!rubberLine || !connectSource) { cleanRubber(); return; }
+      const target = e.target.closest('.node, .system-node');
+      const srcId = connectSource.dataset.nodeId; cleanRubber();
+      if (!target || !target.dataset.nodeId || target.dataset.nodeId === srcId) return;
+      showConnectMenu(e, srcId, target.dataset.nodeId);
+    });
+
+    function getPortPos(el, port) {
+      const x = parseInt(el.style.left) || 0, y = parseInt(el.style.top) || 0;
+      const w = el.offsetWidth || 220, h = el.offsetHeight || 56;
+      if (port === 'top') return { x: x + w/2, y };
+      if (port === 'bottom') return { x: x + w/2, y: y + h };
+      if (port === 'left') return { x, y: y + h/2 };
+      return { x: x + w, y: y + h/2 };
+    }
+    function cleanRubber() { if (rubberLine) { rubberLine.remove(); rubberLine = null; } connectSource = null; }
+
+    function showConnectMenu(e, sourceId, targetId) {
+      removeMenus();
+      const menu = document.createElement('div');
+      menu.className = 'connect-menu';
+      menu.style.left = `${e.clientX}px`; menu.style.top = `${e.clientY}px`;
+      menu.innerHTML = `<button data-action="parent">🔗 Set as Parent</button><button data-action="child">🔗 Set as Child</button><button data-action="group">📦 Group Together</button>`;
+      menu.onclick = async (ev) => {
+        const action = ev.target.dataset.action; if (!action) return; removeMenus();
+        try {
+          const res = await fetch('/api/nodes/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_id: sourceId, target_id: targetId, action }) });
+          if (!res.ok) { const err = await res.json(); alert('Connect failed: ' + (err.detail || 'Unknown error')); return; }
+          // Reload nodes gracefully
+          const nodesRes = await fetch('/api/nodes');
+          if (nodesRes.ok) {
+            const newNodes = await nodesRes.json();
+            if (newNodes.length > 0) { location.reload(); }
+            else { alert('Warning: Connect may have failed. Nodes appear empty.'); }
+          }
+        } catch (err) { console.error(err); alert('Connect failed: ' + err.message); }
+      };
+      document.body.appendChild(menu);
+      setTimeout(() => document.addEventListener('click', removeMenus, { once: true }), 10);
+    }
+    function removeMenus() { document.querySelectorAll('.connect-menu').forEach(m => m.remove()); }
+
+    // ══════════════ SIDE PANEL WITH TABS ══════════════
+    const tabContent = document.getElementById('tab-content');
+    const tabChat = document.getElementById('tab-chat');
+    const chatMessages = document.getElementById('chat-messages');
+    const panelChatInput = document.getElementById('panel-chat-input');
+    const panelChatSend = document.getElementById('panel-chat-send');
+
+    // Tab switching
+    document.querySelectorAll('.panel-tab').forEach(tab => {
+      tab.onclick = () => {
+        document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('panel-tab--active'));
+        tab.classList.add('panel-tab--active');
+        const which = tab.dataset.tab;
+        tabContent.classList.toggle('hidden', which !== 'content');
+        tabChat.classList.toggle('hidden', which !== 'chat');
+      };
+    });
+
+    panelClose.onclick = () => sidePanel.classList.add('hidden');
+    panelSave.onclick = async () => {
+      if (!activeNodeId) return;
+      try {
+        await fetch(`/api/nodes/${activeNodeId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: panelTitle.value.trim(), content: panelContent.value }) });
+        if (activeNodeEl) { activeNodeEl.querySelector('.node-filename').textContent = panelTitle.value.trim(); activeNodeEl.querySelector('.node-status').textContent = `${panelContent.value.length.toLocaleString()} chars`; }
+        panelSave.textContent = '✓'; setTimeout(() => panelSave.textContent = '💾', 1000);
+      } catch (err) { alert('Save failed'); }
+    };
+
+    function openNodePanel(nodeEl) {
+      const nodeId = nodeEl.dataset.nodeId; if (!nodeId) return;
+      activeNodeId = nodeId; activeNodeEl = nodeEl;
+      panelTitle.value = nodeEl.querySelector('.node-filename').textContent;
+      panelContent.value = 'Loading…'; sidePanel.classList.remove('hidden');
+
+      // Reset to content tab
+      document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('panel-tab--active'));
+      document.querySelector('[data-tab="content"]').classList.add('panel-tab--active');
+      tabContent.classList.remove('hidden'); tabChat.classList.add('hidden');
+
+      // Load content
+      nodeContentCache[nodeId] = '';
+      fetch(`/api/knowledge/${nodeId}`).then(res => {
+        if (!res.ok) throw new Error('Failed');
+        const reader = res.body.getReader(), decoder = new TextDecoder();
+        panelContent.value = '';
+        (function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) return;
+            const chunk = decoder.decode(value, { stream: true });
+            panelContent.value += chunk;
+            nodeContentCache[nodeId] += chunk;
+            read();
+          });
+        })();
+      }).catch(err => panelContent.value = '❌ ' + err.message);
+
+      // Render chat history
+      renderChatHistory(nodeId);
+    }
+
+    function renderChatHistory(nodeId) {
+      chatMessages.innerHTML = '';
+      const history = nodeChatHistory[nodeId] || [];
+      if (history.length === 0) {
+        chatMessages.innerHTML = '<div style="text-align:center;color:var(--muted);font-size:0.7rem;padding:30px 0;">Ask any question about this document</div>';
+      }
+      history.forEach(m => {
+        const div = document.createElement('div');
+        div.className = `chat-msg chat-msg--${m.role}`;
+        div.textContent = m.text;
+        chatMessages.appendChild(div);
+      });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Chat with document
+    panelChatSend.onclick = () => sendDocChat();
+    panelChatInput.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendDocChat(); } };
+
+    async function sendDocChat() {
+      const q = panelChatInput.value.trim();
+      if (!q || !activeNodeId) return;
+      panelChatInput.value = '';
+      if (!nodeChatHistory[activeNodeId]) nodeChatHistory[activeNodeId] = [];
+      nodeChatHistory[activeNodeId].push({ role: 'user', text: q });
+      renderChatHistory(activeNodeId);
+
+      // Add streaming AI message
+      const aiMsg = document.createElement('div');
+      aiMsg.className = 'chat-msg chat-msg--ai streaming';
+      aiMsg.textContent = '…';
+      chatMessages.appendChild(aiMsg);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      panelChatSend.disabled = true;
+      try {
+        const res = await fetch('/api/agent/ask', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ node_ids: [activeNodeId], question: q }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        const reader = res.body.getReader(), decoder = new TextDecoder();
+        aiMsg.textContent = '';
+        let fullText = '';
+        (function read() {
+          reader.read().then(({ done, value }) => {
+            if (done) {
+              aiMsg.classList.remove('streaming');
+              nodeChatHistory[activeNodeId].push({ role: 'ai', text: fullText });
+              return;
+            }
+            const chunk = decoder.decode(value, { stream: true });
+            fullText += chunk;
+            aiMsg.textContent = fullText;
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            read();
+          });
+        })();
+      } catch (err) {
+        aiMsg.textContent = '❌ ' + err.message;
+        aiMsg.classList.remove('streaming');
+      }
+      panelChatSend.disabled = false;
+    }
+
+    // ══════════════ NODE HOVER PREVIEW ══════════════
+    let hoverTimer = null;
+    document.addEventListener('mouseover', (e) => {
+      const nodeEl = e.target.closest('.node');
+      if (!nodeEl || !nodeEl.dataset.nodeId || nodeEl.dataset.nodeId.startsWith('temp-')) return;
+      hoverTimer = setTimeout(() => {
+        const nid = nodeEl.dataset.nodeId;
+        const cached = nodeContentCache[nid];
+        if (cached) {
+          tooltip.textContent = cached.slice(0, 250) + (cached.length > 250 ? '…' : '');
+          tooltip.style.left = `${e.clientX + 14}px`;
+          tooltip.style.top = `${e.clientY + 14}px`;
+          tooltip.classList.remove('hidden');
+        }
+      }, 600);
+    });
+    document.addEventListener('mouseout', (e) => {
+      if (e.target.closest('.node')) { clearTimeout(hoverTimer); tooltip.classList.add('hidden'); }
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!tooltip.classList.contains('hidden')) {
+        tooltip.style.left = `${e.clientX + 14}px`;
+        tooltip.style.top = `${e.clientY + 14}px`;
+      }
+    });
+
+    // ══════════════ DOUBLE-CLICK = QUICK NOTE ══════════════
+    canvas.addEventListener('dblclick', async (e) => {
+      if (e.target.closest('.node') || e.target.closest('.system-node') || e.target.closest('button') || e.target.closest('input') || e.target.closest('textarea')) return;
+      const pos = screenToCanvas(e.clientX, e.clientY);
+      const msg = 'New note';
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, message: msg, source: 'text' }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        allNodesData.push(data);
+        // Position it where user clicked
+        await fetch(`/api/nodes/${data.node_id}/position`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x: pos.x, y: pos.y }),
+        });
+        const el = createNodeElement(data.node_id, data.filename, pos.x, pos.y, false, 'knowledge');
+        el.dataset.nodeId = data.node_id;
+        el.querySelector('.node-status').textContent = `${(data.characters || 0).toLocaleString()} chars`;
+        nodesContainer.appendChild(el);
+        // Open for editing
+        openNodePanel(el);
+      } catch (err) { console.error('Quick note failed:', err); }
+    });
+
+    // ══════════════ RESEARCH MODE ══════════════
+    document.getElementById('btn-research').onclick = () => showResearchModal();
+
+    function showResearchModal() {
+      const existing = document.getElementById('research-modal');
+      if (existing) existing.remove();
+
+      const backdrop = document.createElement('div');
+      backdrop.className = 'modal-backdrop'; backdrop.id = 'research-modal';
+      backdrop.innerHTML = `
+        <div class="modal">
+          <h3>🔬 Research a Topic</h3>
+          <input class="modal-input" id="research-topic" placeholder="e.g. Quantum computing applications" autofocus />
+          <div class="modal-actions">
+            <button class="modal-btn modal-btn--ghost" id="research-cancel">Cancel</button>
+            <button class="modal-btn modal-btn--primary" id="research-go">Research</button>
+          </div>
+          <div class="modal-status" id="research-status"></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+
+      document.getElementById('research-cancel').onclick = () => backdrop.remove();
+      backdrop.onclick = (e) => { if (e.target === backdrop) backdrop.remove(); };
+
+      document.getElementById('research-go').onclick = async () => {
+        const topic = document.getElementById('research-topic').value.trim();
+        if (!topic) return;
+        const status = document.getElementById('research-status');
+        const goBtn = document.getElementById('research-go');
+        goBtn.disabled = true; goBtn.textContent = '…';
+        status.textContent = 'Researching… This may take a moment.';
+        try {
+          const res = await fetch('/api/agent/research', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ topic }),
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.detail || `Research failed (${res.status})`);
+          }
+          status.textContent = 'Done! Reloading canvas…';
+          setTimeout(() => location.reload(), 800);
+        } catch (err) {
+          status.textContent = '❌ ' + err.message;
+          goBtn.disabled = false; goBtn.textContent = 'Research';
+        }
+      };
+
+      document.getElementById('research-topic').onkeydown = (e) => {
+        if (e.key === 'Enter') document.getElementById('research-go').click();
+      };
+    }
+
+    // ══════════════ AUTO-ORGANIZE ══════════════
+    document.getElementById('btn-organize').onclick = async () => {
+      const btn = document.getElementById('btn-organize');
+      btn.disabled = true; btn.textContent = '⏳ Organizing…';
+      try {
+        const res = await fetch('/api/agent/organize', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pattern: 'categories', custom_instruction: '' }),
+        });
+        if (!res.ok) throw new Error('Organize failed');
+        btn.textContent = '✓ Done!';
+        setTimeout(() => location.reload(), 800);
+      } catch (err) {
+        alert('Organize failed: ' + err.message);
+        btn.disabled = false; btn.textContent = '✨ Organize';
+      }
+    };
+
+    // ══════════════ COMMAND PALETTE (Ctrl+K) ══════════════
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        openCommandPalette();
+      }
+      if (e.key === 'Escape') {
+        closeCmdPalette();
+      }
+    });
+
+    function openCommandPalette() {
+      closeCmdPalette();
+      const backdrop = document.createElement('div');
+      backdrop.className = 'cmd-backdrop'; backdrop.id = 'cmd-backdrop';
+      backdrop.onclick = closeCmdPalette;
+      document.body.appendChild(backdrop);
+
+      const palette = document.createElement('div');
+      palette.className = 'cmd-palette'; palette.id = 'cmd-palette';
+      palette.innerHTML = `<input class="cmd-palette-input" id="cmd-input" placeholder="Search nodes, actions…" autofocus /><div class="cmd-results" id="cmd-results"></div>`;
+      document.body.appendChild(palette);
+
+      const input = document.getElementById('cmd-input');
+      input.oninput = () => renderCmdResults(input.value);
+      input.onkeydown = (e) => {
+        if (e.key === 'Escape') closeCmdPalette();
+        if (e.key === 'Enter') {
+          const active = document.querySelector('.cmd-result--active') || document.querySelector('.cmd-result');
+          if (active) active.click();
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const items = [...document.querySelectorAll('.cmd-result')];
+          const idx = items.findIndex(i => i.classList.contains('cmd-result--active'));
+          items.forEach(i => i.classList.remove('cmd-result--active'));
+          const next = e.key === 'ArrowDown' ? Math.min(idx + 1, items.length - 1) : Math.max(idx - 1, 0);
+          if (items[next]) items[next].classList.add('cmd-result--active');
+        }
+      };
+      renderCmdResults('');
+    }
+
+    function closeCmdPalette() {
+      const b = document.getElementById('cmd-backdrop'); if (b) b.remove();
+      const p = document.getElementById('cmd-palette'); if (p) p.remove();
+    }
+
+    function renderCmdResults(query) {
+      const results = document.getElementById('cmd-results');
+      if (!results) return;
+      const q = query.toLowerCase();
+      let items = [];
+
+      // Actions
+      items.push({ icon: '🔬', label: 'Research a topic', hint: '', action: () => { closeCmdPalette(); showResearchModal(); } });
+      items.push({ icon: '✨', label: 'Auto-organize canvas', hint: '', action: () => { closeCmdPalette(); document.getElementById('btn-organize').click(); } });
+      items.push({ icon: '📝', label: 'Create Notes', hint: '', action: () => { closeCmdPalette(); showCreateNotesModal(); } });
+
+      // Nodes
+      allNodesData.filter(n => n.node_type !== 'system').forEach(n => {
+        items.push({
+          icon: '⬡', label: n.filename || n.node_id,
+          hint: `${(n.characters || 0).toLocaleString()} chars`,
+          action: () => {
+            closeCmdPalette();
+            const el = document.getElementById(`node-${n.node_id}`);
+            if (el) {
+              // Pan to node
+              const nx = parseInt(el.style.left), ny = parseInt(el.style.top);
+              const rect = canvas.getBoundingClientRect();
+              panX = rect.width / 2 - nx * zoom;
+              panY = rect.height / 2 - ny * zoom;
+              applyTransform();
+              openNodePanel(el);
+            }
+          }
+        });
+      });
+
+      // Filter
+      if (q) items = items.filter(i => i.label.toLowerCase().includes(q));
+
+      results.innerHTML = '';
+      items.slice(0, 12).forEach((item, i) => {
+        const div = document.createElement('div');
+        div.className = 'cmd-result' + (i === 0 ? ' cmd-result--active' : '');
+        div.innerHTML = `<span class="cmd-result-icon">${item.icon}</span><span class="cmd-result-label">${escapeHtml(item.label)}</span><span class="cmd-result-hint">${item.hint}</span>`;
+        div.onclick = item.action;
+        results.appendChild(div);
+      });
+    }
+
+    // ══════════════ CHAT SYSTEM NODE ══════════════
+    function initChat() {
+      const input = document.getElementById('chat-input');
+      const btn = document.getElementById('chat-send');
+      if (!input || !btn) return;
+      btn.onclick = () => sendSysChat(input, btn);
+      input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendSysChat(input, btn); } };
+    }
+    async function sendSysChat(input, btn) {
+      const msg = input.value.trim(); if (!msg) return;
+      input.value = ''; btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, message: msg, source: 'text' }) });
+        if (!res.ok) throw new Error('Failed');
+        addChildNode(await res.json());
+      } catch (err) { console.error(err); }
+      btn.disabled = false; btn.textContent = 'Send ⏎';
+    }
+
+    // ══════════════ VOICE ══════════════
+    function initVoice() {
+      const btn = document.getElementById('voice-btn');
+      const status = document.getElementById('voice-status');
+      if (!btn) return;
+      let recognition = null, listening = false;
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SR(); recognition.continuous = false; recognition.interimResults = false;
+        recognition.onresult = async (ev) => {
+          const t = ev.results[0][0].transcript;
+          status.textContent = `"${t.slice(0, 35)}…"`; listening = false; btn.textContent = '🎙'; btn.classList.remove('listening');
+          try {
+            const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ session_id: sessionId, message: t, source: 'voice' }) });
+            if (!res.ok) throw new Error('Failed');
+            addChildNode(await res.json()); status.textContent = 'Click to speak';
+          } catch { status.textContent = '❌ Failed'; }
+        };
+        recognition.onerror = () => { listening = false; btn.textContent = '🎙'; btn.classList.remove('listening'); };
+        recognition.onend = () => { listening = false; btn.textContent = '🎙'; btn.classList.remove('listening'); };
+      }
+      btn.onclick = () => {
+        if (!recognition) { status.textContent = 'Not supported'; return; }
+        if (listening) { recognition.stop(); } else { recognition.start(); listening = true; btn.textContent = '⏹'; btn.classList.add('listening'); status.textContent = 'Listening…'; }
+      };
+    }
+
+    // ══════════════ UNIFIED AGENT ══════════════
+    let agentSelectedNodes = new Set(), agentSelecting = false;
+    const agentConvoHistory = []; // [{role:'user'|'ai', text}]
+
+    function initAgent() {
+      const selectBtn = document.getElementById('agent-select-btn');
+      const input = document.getElementById('agent-input');
+      const sendBtn = document.getElementById('agent-send');
+      const micBtn = document.getElementById('agent-mic-btn');
+      const convoLog = document.getElementById('agent-convo-log');
+      const suggestionsDiv = document.getElementById('agent-suggestions');
+      if (!selectBtn) return;
+
+      // ── Select Nodes toggle ──
+      selectBtn.onclick = () => {
+        agentSelecting = !agentSelecting;
+        selectBtn.classList.toggle('agent-action-btn--active', agentSelecting);
+        selectBtn.textContent = agentSelecting ? `✓ Done (${agentSelectedNodes.size})` : `🎯 Select (${agentSelectedNodes.size})`;
+        document.querySelectorAll('.node').forEach(el => el.classList.toggle('node--selectable', agentSelecting));
+      };
+      document.addEventListener('click', (e) => {
+        if (!agentSelecting) return;
+        const nodeEl = e.target.closest('.node'); if (!nodeEl || !nodeEl.dataset.nodeId) return;
+        const nid = nodeEl.dataset.nodeId; if (nid.startsWith('system-')) return;
+        e.stopPropagation();
+        if (agentSelectedNodes.has(nid)) { agentSelectedNodes.delete(nid); nodeEl.classList.remove('node--agent-selected'); }
+        else { agentSelectedNodes.add(nid); nodeEl.classList.add('node--agent-selected'); }
+        selectBtn.textContent = agentSelecting ? `✓ Done (${agentSelectedNodes.size})` : `🎯 Select (${agentSelectedNodes.size})`;
+      }, true);
+
+      // ── Voice (mic button) ──
+      let recognition = null, listening = false;
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        recognition = new SR(); recognition.continuous = false; recognition.interimResults = false;
+        recognition.onresult = (ev) => {
+          const t = ev.results[0][0].transcript;
+          input.value = t;
+          listening = false; micBtn.textContent = '🎙'; micBtn.classList.remove('listening');
+          // Auto-send after voice
+          agentSend(input, sendBtn, convoLog, suggestionsDiv);
+        };
+        recognition.onerror = () => { listening = false; micBtn.textContent = '🎙'; micBtn.classList.remove('listening'); };
+        recognition.onend = () => { listening = false; micBtn.textContent = '🎙'; micBtn.classList.remove('listening'); };
+      }
+      micBtn.onclick = () => {
+        if (!recognition) return;
+        if (listening) { recognition.stop(); } else {
+          recognition.start(); listening = true; micBtn.textContent = '⏹'; micBtn.classList.add('listening');
+        }
+      };
+
+      // ── Send via conversational planner ──
+      sendBtn.onclick = () => agentSend(input, sendBtn, convoLog, suggestionsDiv);
+      input.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); agentSend(input, sendBtn, convoLog, suggestionsDiv); } };
+    }
+
+    async function agentSend(input, btn, convoLog, suggestionsDiv) {
+      const q = input.value.trim(); if (!q) return;
+      input.value = ''; btn.disabled = true; btn.textContent = '…';
+      suggestionsDiv.innerHTML = '';
+
+      // Add user message
+      agentConvoHistory.push({ role: 'user', text: q });
+      renderAgentConvo(convoLog);
+
+      try {
+        const res = await fetch('/api/agent/converse', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: q,
+            conversation_history: agentConvoHistory.slice(-10),
+            selected_node_ids: [...agentSelectedNodes],
+          }),
+        });
+        if (!res.ok) throw new Error('Agent failed');
+
+        const reader = res.body.getReader(), decoder = new TextDecoder();
+        let buffer = '';
+        let lastReplyText = '';
+
+        await new Promise((resolve) => {
+          (function read() {
+            reader.read().then(({ done, value }) => {
+              if (done) { resolve(); return; }
+              buffer += decoder.decode(value, { stream: true });
+              // Process complete NDJSON lines
+              const lines = buffer.split('\n');
+              buffer = lines.pop(); // keep incomplete line
+              for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                  const msg = JSON.parse(line);
+                  handleAgentMessage(msg, convoLog, suggestionsDiv);
+                  if (msg.type === 'reply') lastReplyText = msg.text;
+                } catch (e) { console.warn('Parse error:', line); }
+              }
+              read();
+            });
+          })();
+        });
+
+        // Save last reply to history
+        if (lastReplyText) {
+          agentConvoHistory.push({ role: 'ai', text: lastReplyText });
+        }
+      } catch (err) {
+        agentConvoHistory.push({ role: 'ai', text: '❌ ' + err.message });
+        renderAgentConvo(convoLog);
+      }
+      btn.disabled = false; btn.textContent = 'Send ⏎';
+    }
+
+    function handleAgentMessage(msg, convoLog, suggestionsDiv) {
+      if (msg.type === 'thinking') {
+        addAgentMsg(convoLog, 'action', msg.text);
+      } else if (msg.type === 'action') {
+        addAgentMsg(convoLog, 'action', msg.text);
+        // Handle reload action
+        if (msg.action === 'reload') {
+          setTimeout(() => location.reload(), 1000);
+        }
+      } else if (msg.type === 'reply') {
+        const div = addAgentMsg(convoLog, 'ai', msg.text);
+        // Add save-as-node button
+        if (msg.text.length > 20) {
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'save-as-node-btn';
+          saveBtn.textContent = '💾';
+          saveBtn.title = 'Save as Node';
+          saveBtn.onclick = () => saveConvoAsNode(msg.text, saveBtn);
+          div.appendChild(saveBtn);
+        }
+      } else if (msg.type === 'nodes_created') {
+        addAgentMsg(convoLog, 'action', `✅ Created ${msg.count} node(s)`);
+        // Add nodes to canvas
+        if (msg.nodes) {
+          const agentEl = document.getElementById('node-system-agent');
+          const ax = parseInt(agentEl.style.left) + 340;
+          const ay = parseInt(agentEl.style.top);
+          msg.nodes.forEach((meta, i) => {
+            allNodesData.push(meta);
+            const el = createNodeElement(meta.node_id, meta.filename, ax + i * 30, ay + i * 60, false, 'knowledge');
+            el.dataset.nodeId = meta.node_id;
+            el.querySelector('.node-status').textContent = `${(meta.characters || 0).toLocaleString()} chars`;
+            nodesContainer.appendChild(el);
+          });
+        }
+        // For research that creates many nodes, reload
+        if (msg.count > 2) {
+          setTimeout(() => location.reload(), 1500);
+        }
+      } else if (msg.type === 'error') {
+        addAgentMsg(convoLog, 'action', '❌ ' + msg.text);
+      } else if (msg.type === 'suggestions') {
+        suggestionsDiv.innerHTML = '';
+        (msg.suggestions || []).forEach(s => {
+          const chip = document.createElement('button');
+          chip.className = 'suggestion-chip';
+          chip.textContent = s;
+          chip.onclick = () => {
+            const input = document.getElementById('agent-input');
+            input.value = s;
+            const sendBtn = document.getElementById('agent-send');
+            agentSend(input, sendBtn, convoLog, suggestionsDiv);
+          };
+          suggestionsDiv.appendChild(chip);
+        });
+      }
+    }
+
+    function renderAgentConvo(convoLog) {
+      convoLog.innerHTML = '';
+      agentConvoHistory.forEach((m, i) => {
+        const div = document.createElement('div');
+        div.className = `agent-msg agent-msg--${m.role}`;
+        const span = document.createElement('span');
+        span.textContent = m.text;
+        div.appendChild(span);
+        if (m.role === 'ai' && m.text.length > 10) {
+          const saveBtn = document.createElement('button');
+          saveBtn.className = 'save-as-node-btn';
+          saveBtn.textContent = '💾';
+          saveBtn.title = 'Save as Node';
+          saveBtn.onclick = () => saveConvoAsNode(m.text, saveBtn);
+          div.appendChild(saveBtn);
+        }
+        convoLog.appendChild(div);
+      });
+      convoLog.scrollTop = convoLog.scrollHeight;
+    }
+
+    function addAgentMsg(convoLog, role, text) {
+      const div = document.createElement('div');
+      div.className = `agent-msg agent-msg--${role}`;
+      const span = document.createElement('span');
+      span.textContent = text;
+      div.appendChild(span);
+      convoLog.appendChild(div);
+      convoLog.scrollTop = convoLog.scrollHeight;
+      return div;
+    }
+
+    async function saveConvoAsNode(text, btn) {
+      const agentEl = document.getElementById('node-system-agent');
+      const ax = parseInt(agentEl.style.left) + 340;
+      const ay = parseInt(agentEl.style.top) + Math.random() * 100;
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, message: text.slice(0, 200), source: 'text' }),
+        });
+        if (!res.ok) throw new Error('Failed');
+        const data = await res.json();
+        allNodesData.push(data);
+        await fetch(`/api/nodes/${data.node_id}/position`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ x: ax, y: ay }),
+        });
+        // Save the full text as content
+        await fetch(`/api/nodes/${data.node_id}`, {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: data.filename, content: text }),
+        });
+        const el = createNodeElement(data.node_id, data.filename, ax, ay, false, 'knowledge');
+        el.dataset.nodeId = data.node_id;
+        el.querySelector('.node-status').textContent = `${text.length.toLocaleString()} chars`;
+        nodesContainer.appendChild(el);
+        btn.textContent = '✓'; btn.style.color = 'var(--accent)';
+        setTimeout(() => { btn.textContent = '💾'; btn.style.color = ''; }, 1500);
+      } catch (err) { console.error(err); btn.textContent = '✕'; }
+    }
+
+    function addChildNode(data) {
+      allNodesData.push(data);
+      const totalPages = Math.ceil(getChildren(data.parent_id).length / PAGE_SIZE);
+      pageState[data.parent_id] = totalPages - 1;
+      renderChildrenForParent(data.parent_id);
+    }
+
+    // ══════════════ GROUP VISUALIZATION ══════════════
+    const GROUP_COLORS = [
+      { bg: 'rgba(240,160,48,0.06)', border: 'rgba(240,160,48,0.35)', label: 'rgba(240,160,48,0.9)' },
+      { bg: 'rgba(96,180,255,0.06)', border: 'rgba(96,180,255,0.35)', label: 'rgba(96,180,255,0.9)' },
+      { bg: 'rgba(120,220,120,0.06)', border: 'rgba(120,220,120,0.35)', label: 'rgba(120,220,120,0.9)' },
+      { bg: 'rgba(220,120,220,0.06)', border: 'rgba(220,120,220,0.35)', label: 'rgba(220,120,220,0.9)' },
+      { bg: 'rgba(255,120,100,0.06)', border: 'rgba(255,120,100,0.35)', label: 'rgba(255,120,100,0.9)' },
+    ];
+
+    function drawGroups() {
+      // Remove old group rects
+      document.querySelectorAll('.group-rect').forEach(el => el.remove());
+
+      // Collect groups from data
+      const groups = {};
+      allNodesData.forEach(n => {
+        const gid = n.group_id;
+        if (!gid) return;
+        if (!groups[gid]) groups[gid] = [];
+        groups[gid].push(n.node_id);
+      });
+
+      let colorIdx = 0;
+      Object.entries(groups).forEach(([gid, nodeIds]) => {
+        if (nodeIds.length < 2) return;
+        const color = GROUP_COLORS[colorIdx % GROUP_COLORS.length];
+        colorIdx++;
+
+        // Find bounding box of all nodes in this group
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        nodeIds.forEach(nid => {
+          const el = document.getElementById(`node-${nid}`);
+          if (!el) return;
+          const x = parseInt(el.style.left) || 0;
+          const y = parseInt(el.style.top) || 0;
+          const w = el.offsetWidth || 220;
+          const h = el.offsetHeight || 56;
+          minX = Math.min(minX, x);
+          minY = Math.min(minY, y);
+          maxX = Math.max(maxX, x + w);
+          maxY = Math.max(maxY, y + h);
+        });
+
+        if (minX === Infinity) return;
+
+        const pad = 20;
+        const rect = document.createElement('div');
+        rect.className = 'group-rect';
+        rect.style.left = `${minX - pad}px`;
+        rect.style.top = `${minY - pad}px`;
+        rect.style.width = `${maxX - minX + pad * 2}px`;
+        rect.style.height = `${maxY - minY + pad * 2}px`;
+        rect.style.background = color.bg;
+        rect.style.borderColor = color.border;
+
+        const label = document.createElement('div');
+        label.className = 'group-label';
+        label.textContent = `📦 Group (${nodeIds.length})`;
+        label.style.background = color.bg;
+        label.style.color = color.label;
+        rect.appendChild(label);
+
+        // Add invisible drag handle around the edges
+        const handle = document.createElement('div');
+        handle.className = 'group-rect-handle';
+        rect.appendChild(handle);
+
+        // Make group rect draggable via handle
+        makeGroupDraggable(handle, rect, gid, nodeIds);
+
+        // Click label to ungroup all
+        label.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm(`Ungroup all ${nodeIds.length} nodes?`)) return;
+          for (const nid of nodeIds) {
+            try { await fetch('/api/nodes/ungroup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ node_id: nid }) }); } catch(err) { console.error(err); }
+            const nd = allNodesData.find(n => n.node_id === nid);
+            if (nd) nd.group_id = null;
+          }
+          drawConnectors();
+        });
+
+        nodesContainer.appendChild(rect);
+
+        // Also tint grouped node borders
+        nodeIds.forEach(nid => {
+          const el = document.getElementById(`node-${nid}`);
+          if (el) el.style.borderColor = color.border;
+        });
+      });
+    }
+
+    function makeGroupDraggable(handle, rect, gid, nodeIds) {
+      let isDragging = false, startX, startY;
+      const origPositions = {}; // nodeId -> {x, y}
+
+      handle.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.group-label')) return;
+        if (spaceDown) return;
+        isDragging = true; startX = e.clientX; startY = e.clientY;
+        nodeIds.forEach(nid => {
+          const el = document.getElementById(`node-${nid}`);
+          if (el) origPositions[nid] = { x: parseInt(el.style.left), y: parseInt(el.style.top) };
+        });
+        rect.classList.add('group-rect--dragging');
+        e.preventDefault(); e.stopPropagation();
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        const dx = (e.clientX - startX) / zoom, dy = (e.clientY - startY) / zoom;
+        nodeIds.forEach(nid => {
+          const el = document.getElementById(`node-${nid}`);
+          const orig = origPositions[nid];
+          if (el && orig) {
+            el.style.left = `${orig.x + dx}px`;
+            el.style.top = `${orig.y + dy}px`;
+          }
+        });
+        drawConnectors();
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (!isDragging) return;
+        isDragging = false;
+        rect.classList.remove('group-rect--dragging');
+        // Save all moved node positions
+        nodeIds.forEach(nid => {
+          const el = document.getElementById(`node-${nid}`);
+          if (el) {
+            fetch(`/api/nodes/${nid}/position`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ x: parseInt(el.style.left), y: parseInt(el.style.top) }),
+            }).catch(() => {});
+          }
+        });
+      });
+    }
+
+    // ══════════════ RIGHT-CLICK CONTEXT MENU ══════════════
+    document.addEventListener('contextmenu', (e) => {
+      const nodeEl = e.target.closest('.node');
+      if (!nodeEl || !nodeEl.dataset.nodeId) return;
+      e.preventDefault();
+      const nid = nodeEl.dataset.nodeId;
+      const nodeData = allNodesData.find(n => n.node_id === nid);
+      if (!nodeData) return;
+
+      removeNodeCtxMenus();
+      const menu = document.createElement('div');
+      menu.className = 'node-ctx-menu';
+      menu.style.left = `${e.clientX}px`; menu.style.top = `${e.clientY}px`;
+
+      let html = '';
+      if (nodeData.group_id) {
+        html += `<button data-action="ungroup">📤 Remove from Group</button>`;
+      }
+      if (nodeData.parent_id && !nodeData.parent_id.startsWith('system-')) {
+        html += `<button data-action="disconnect">🔗 Disconnect from Parent</button>`;
+      }
+      html += `<button data-action="delete">🗑 Delete Node</button>`;
+      menu.innerHTML = html;
+
+      menu.onclick = async (ev) => {
+        const action = ev.target.dataset.action; if (!action) return;
+        removeNodeCtxMenus();
+        if (action === 'ungroup') {
+          try {
+            await fetch('/api/nodes/ungroup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ node_id: nid }) });
+            nodeData.group_id = null;
+            nodeEl.style.borderColor = '';
+            drawConnectors();
+          } catch (err) { console.error(err); }
+        } else if (action === 'disconnect') {
+          try {
+            await fetch('/api/nodes/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source_id: nodeData.parent_id, target_id: nid }) });
+            nodeData.parent_id = null;
+            nodeEl.dataset.parentId = '';
+            drawConnectors();
+          } catch (err) { console.error(err); }
+        } else if (action === 'delete') {
+          nodeEl.querySelector('.node-delete').click();
+        }
+      };
+      document.body.appendChild(menu);
+      setTimeout(() => document.addEventListener('click', removeNodeCtxMenus, { once: true }), 10);
+    });
+
+    function removeNodeCtxMenus() { document.querySelectorAll('.node-ctx-menu').forEach(m => m.remove()); }
+
+    function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+  </script>
+</body>
+</html>

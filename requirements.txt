@@ -1,0 +1,49 @@
+# Core LLM + OpenAI
+openai>=1.30.0
+
+# LangChain ecosystem (LCEL + agents + tools)
+langchain>=0.2.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-openai>=0.1.0
+
+# LangChain Ollama
+langchain-ollama>=1.0.0
+
+# Tavily search tool
+tavily-python>=0.3.0
+
+# Web scraping (BeautifulSoup)
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+requests>=2.31.0
+
+# Async support (important for multi-agent workflows)
+httpx>=0.27.0
+aiohttp>=3.9.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Data handling
+pydantic>=2.6.0
+
+# Logging & utilities
+loguru>=0.7.0
+
+# Optional: FastAPI (if you expose your agents as API)
+fastapi>=0.110.0
+uvicorn>=0.29.0
+
+# Optional: Retry & robustness
+tenacity>=8.2.0
+
+# Optional: JSON parsing improvements
+orjson>=3.10.0
+
+# Optional: typing improvements
+typing-extensions>=4.9.0
+
+# PDF parsing
+PyPDF2>=3.0.0
+python-multipart>=0.0.6
