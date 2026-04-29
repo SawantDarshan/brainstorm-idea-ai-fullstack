@@ -1,6 +1,6 @@
 @echo off
 echo ============================================
-echo  Multi-Agent Research System - Setup
+echo  Brainstorm Idea AI - Setup
 echo ============================================
 echo.
 
@@ -11,36 +11,29 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Check Node
-node --version >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Node.js not found. Install from https://nodejs.org
-    exit /b 1
-)
-
 :: Install Python deps
-echo [1/4] Installing Python dependencies...
+echo [1/3] Installing Python dependencies...
 pip install -r requirements.txt
 
 :: Create .env if missing
 if not exist .env (
-    echo [2/4] Creating .env from .env.example...
-    copy .env.example .env
-    echo [!] Edit .env and add your TAVILY_API_KEY
+    echo [2/3] Creating .env file...
+    (
+        echo # Add your API keys here
+        echo OPENAI_API_KEY=
+        echo TAVILY_API_KEY=
+        echo APP_MODE=web
+    ) > .env
+    echo [!] Edit .env and add your API keys
 ) else (
-    echo [2/4] .env already exists, skipping.
+    echo [2/3] .env already exists, skipping.
 )
 
-:: Install frontend deps
-echo [3/4] Installing frontend dependencies...
-npm --prefix frontend install
-
 :: Check Ollama
-echo [4/4] Checking Ollama...
+echo [3/3] Checking Ollama (optional)...
 ollama --version >nul 2>&1
 if errorlevel 1 (
-    echo [!] Ollama not found. Install from https://ollama.com
-    echo [!] Then run: ollama pull qwen2.5:3b
+    echo [!] Ollama not found (optional). Install from https://ollama.com
 ) else (
     echo Pulling model qwen2.5:3b ...
     ollama pull qwen2.5:3b
@@ -50,8 +43,8 @@ echo.
 echo ============================================
 echo  Setup complete!
 echo.
-echo  To start:
-echo    Terminal 1: python main.py api
-echo    Terminal 2: npm --prefix frontend run dev
-echo    Open: http://localhost:3000
+echo  To run the project:
+echo    python main.py web    (web interface)
+echo    python main.py api    (API server)
+echo    python main.py cli    (CLI mode)
 echo ============================================
