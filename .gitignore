@@ -38,3 +38,6 @@ docker-compose.override.yml
 # data
 /data
 .vercel
+
+# Firebase
+config/firebase-service-account.json

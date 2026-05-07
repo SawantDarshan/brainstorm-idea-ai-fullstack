@@ -10,6 +10,12 @@ langchain-openai>=0.1.0
 # LangChain Ollama
 langchain-ollama>=1.0.0
 
+# LangChain Google Gemini
+langchain-google-genai>=1.0.0
+
+# LangChain Groq
+langchain-groq>=0.1.0
+
 # Tavily search tool
 tavily-python>=0.3.0
 
@@ -47,3 +53,6 @@ typing-extensions>=4.9.0
 # PDF parsing
 PyPDF2>=3.0.0
 python-multipart>=0.0.6
+
+# Authentication (Firebase)
+firebase-admin>=6.0.0

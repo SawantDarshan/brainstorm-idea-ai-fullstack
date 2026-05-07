@@ -5,7 +5,7 @@ import re
 import uuid
 import os
 from typing import Generator
-from config.global_context import ENGINE_PROVIDER
+from engine.registry import get_engine
 from pipelines.knowledge_pipeline import KnowledgePipeline
 
 
@@ -58,15 +58,7 @@ class PlannerAgent:
 
     def __init__(self, knowledge_pipeline: KnowledgePipeline = None):
         self.pipeline = knowledge_pipeline or KnowledgePipeline()
-        self.engine = self._create_engine()
-
-    def _create_engine(self):
-        if ENGINE_PROVIDER == "openai":
-            from engine.openai_engine import OpenAIEngine
-            return OpenAIEngine()
-        else:
-            from engine.ollama_engine import OllamaEngine
-            return OllamaEngine()
+        self.engine = get_engine()
 
     def _get_canvas_context(self) -> dict:
         """Get current canvas state for context."""
@@ -130,17 +122,29 @@ class PlannerAgent:
         Main conversational entry point. Yields JSON lines for streaming.
         Each line is a JSON object with type: "thinking" | "reply" | "action" | "nodes_created" | "suggestions" | "done"
         """
+        import queue
+        import threading
+
         conversation_history = conversation_history or []
         selected_node_ids = selected_node_ids or []
 
-        # Step 1: Classify intent
-        yield json.dumps({"type": "thinking", "text": "Understanding your request..."}) + "\n"
+        # Always show pipeline for every request
+        yield json.dumps({"type": "pipeline_start", "steps": [
+            {"id": "classify", "label": "Understanding request"},
+            {"id": "think", "label": "Generating response"},
+        ]}) + "\n"
+        yield json.dumps({"type": "step", "step": "classify", "status": "running", "text": "Analyzing your message..."}) + "\n"
 
+        # Step 1: Classify intent
         plan = self._classify_intent(message, conversation_history, selected_node_ids)
         intent = plan.get("intent", "chat")
         reply = plan.get("reply", "")
         params = plan.get("params", {})
         suggestions = plan.get("suggestions", [])
+
+        yield json.dumps({"type": "step", "step": "classify", "status": "done", "text": f"Intent: {intent}"}) + "\n"
+        yield json.dumps({"type": "step", "step": "think", "status": "done", "text": "Response ready"}) + "\n"
+        yield json.dumps({"type": "pipeline_done"}) + "\n"
 
         # Step 2: Send initial reply
         yield json.dumps({"type": "reply", "text": reply}) + "\n"
@@ -149,19 +153,61 @@ class PlannerAgent:
         if intent == "research":
             topic = params.get("topic", message)
             yield json.dumps({"type": "action", "action": "research", "text": f"🔬 Researching: {topic}..."}) + "\n"
+            # Emit research pipeline steps
+            yield json.dumps({"type": "pipeline_start", "steps": [
+                {"id": "search", "label": "Search the web"},
+                {"id": "scrape", "label": "Scrape pages"},
+                {"id": "generate", "label": "Generate mind map"},
+                {"id": "create_nodes", "label": "Create canvas nodes"},
+            ]}) + "\n"
             try:
                 from agents.researcher.research_agent import ResearchAgent
-                agent = ResearchAgent(self.pipeline)
-                result = agent.research(topic)
+                # Use a queue to stream steps in real-time from the research thread
+                step_queue = queue.Queue()
+
+                def on_step(step_id, status, text):
+                    step_queue.put((step_id, status, text))
+
+                agent = ResearchAgent(self.pipeline, on_step=on_step)
+                result_holder = [None]
+                error_holder = [None]
+
+                def run_research():
+                    try:
+                        result_holder[0] = agent.research(topic)
+                    except Exception as ex:
+                        error_holder[0] = ex
+                    step_queue.put(None)  # sentinel
+
+                t = threading.Thread(target=run_research)
+                t.start()
+
+                # Yield step events as they come in real-time
+                while True:
+                    item = step_queue.get()
+                    if item is None:
+                        break
+                    step_id, status, text = item
+                    yield json.dumps({"type": "step", "step": step_id, "status": status, "text": text}) + "\n"
+
+                t.join()
+
+                if error_holder[0]:
+                    raise error_holder[0]
+
+                result = result_holder[0] or {}
                 node_count = result.get("nodes_created", 0)
                 errors = result.get("errors", [])
                 yield json.dumps({"type": "nodes_created", "count": node_count, "node_ids": []}) + "\n"
                 if errors:
                     yield json.dumps({"type": "error", "text": f"Warnings: {'; '.join(errors)}"}) + "\n"
+                yield json.dumps({"type": "pipeline_done"}) + "\n"
                 yield json.dumps({"type": "reply", "text": f"✅ Created {node_count} research notes on '{topic}'. Reload to see them."}) + "\n"
                 if node_count > 0:
                     yield json.dumps({"type": "action", "action": "reload", "text": "Reloading canvas..."}) + "\n"
             except Exception as e:
+                yield json.dumps({"type": "step", "step": "error", "status": "error", "text": str(e)}) + "\n"
+                yield json.dumps({"type": "pipeline_done"}) + "\n"
                 yield json.dumps({"type": "error", "text": f"Research failed: {str(e)}"}) + "\n"
 
         elif intent == "create_note":

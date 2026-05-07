@@ -3,7 +3,7 @@
 import json
 import re
 import uuid
-from config.global_context import ENGINE_PROVIDER
+from engine.registry import get_engine
 from pipelines.knowledge_pipeline import KnowledgePipeline
 
 PATTERN_PROMPTS = {
@@ -61,15 +61,7 @@ class OrganizerAgent:
 
     def __init__(self, knowledge_pipeline: KnowledgePipeline = None):
         self.pipeline = knowledge_pipeline or KnowledgePipeline()
-        self.engine = self._create_engine()
-
-    def _create_engine(self):
-        if ENGINE_PROVIDER == "openai":
-            from engine.openai_engine import OpenAIEngine
-            return OpenAIEngine()
-        else:
-            from engine.ollama_engine import OllamaEngine
-            return OllamaEngine()
+        self.engine = get_engine()
 
     def _gather_nodes_info(self) -> tuple[list[dict], str]:
         """Gather all organizable nodes with content previews."""

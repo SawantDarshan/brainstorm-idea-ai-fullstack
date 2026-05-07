@@ -4,7 +4,7 @@ import json
 import re
 import uuid
 import os
-from config.global_context import ENGINE_PROVIDER
+from engine.registry import get_engine
 from pipelines.knowledge_pipeline import KnowledgePipeline
 
 MIND_MAP_PROMPT = """You are a Research Mind Map AI. You have been given scraped web content about a topic. Your job is to analyze ALL the content and create a structured mind map.
@@ -41,17 +41,14 @@ Here is the scraped content:
 class ResearchAgent:
     """Agent that researches a topic online and creates a mind map cluster of nodes."""
 
-    def __init__(self, knowledge_pipeline: KnowledgePipeline = None):
+    def __init__(self, knowledge_pipeline: KnowledgePipeline = None, on_step=None):
         self.pipeline = knowledge_pipeline or KnowledgePipeline()
-        self.engine = self._create_engine()
+        self.engine = get_engine()
+        self.on_step = on_step  # callback: (step_id, status, text) -> None
 
-    def _create_engine(self):
-        if ENGINE_PROVIDER == "openai":
-            from engine.openai_engine import OpenAIEngine
-            return OpenAIEngine()
-        else:
-            from engine.ollama_engine import OllamaEngine
-            return OllamaEngine()
+    def _emit(self, step_id: str, status: str, text: str):
+        if self.on_step:
+            self.on_step(step_id, status, text)
 
     def _search_web(self, topic: str) -> list:
         """Search for science-backed information on the topic."""
@@ -144,29 +141,40 @@ class ResearchAgent:
         }
 
         # Step 1: Search
+        self._emit("search", "running", f"Searching the web for '{topic}'...")
         try:
             search_results = self._search_web(topic)
             results["sources_found"] = len(search_results)
+            self._emit("search", "done", f"Found {len(search_results)} sources")
         except Exception as e:
+            self._emit("search", "error", str(e))
             results["errors"].append(f"Search failed: {str(e)}")
             return results
 
         # Step 2: Scrape
+        self._emit("scrape", "running", f"Scraping {len(search_results)} pages...")
         try:
             scraped = self._scrape_urls(search_results)
             results["sources_scraped"] = len([s for s in scraped if len(s.get("content", "")) > 50])
+            self._emit("scrape", "done", f"Scraped {results['sources_scraped']} pages successfully")
         except Exception as e:
+            self._emit("scrape", "error", str(e))
             results["errors"].append(f"Scrape failed: {str(e)}")
             return results
 
         # Step 3: Build mind map via LLM
+        self._emit("generate", "running", "AI is analyzing content & generating mind map...")
         try:
             mind_map = self._build_mind_map(topic, scraped)
+            branches_count = len(mind_map.get("branches", []))
+            self._emit("generate", "done", f"Generated mind map with {branches_count} branches")
         except Exception as e:
+            self._emit("generate", "error", str(e))
             results["errors"].append(f"Mind map generation failed: {str(e)}")
             return results
 
         # Step 4: Create nodes
+        self._emit("create_nodes", "running", "Creating knowledge nodes on canvas...")
         try:
             # Find a good starting position (offset from existing nodes)
             all_nodes = self.pipeline.get_all_nodes()
@@ -207,7 +215,9 @@ class ResearchAgent:
                 for rid in research_ids[2:]:
                     self.pipeline.connect_nodes(research_ids[0], rid, "group")
 
+            self._emit("create_nodes", "done", f"Created {results['nodes_created']} nodes")
         except Exception as e:
+            self._emit("create_nodes", "error", str(e))
             results["errors"].append(f"Node creation failed: {str(e)}")
 
         return results

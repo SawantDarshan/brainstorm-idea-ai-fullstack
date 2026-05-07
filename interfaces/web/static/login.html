@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — AI Canvas</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+        }
+        .auth-container {
+            background: #1a1a2e;
+            border: 1px solid #333;
+            border-radius: 16px;
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            text-align: center;
+        }
+        .logo { font-size: 2.5rem; margin-bottom: 8px; }
+        h1 { font-size: 22px; color: #fff; margin-bottom: 6px; }
+        .subtitle { color: #888; margin-bottom: 32px; font-size: 14px; }
+
+        /* Google button */
+        .google-btn {
+            display: flex; align-items: center; justify-content: center; gap: 12px;
+            width: 100%; padding: 14px 20px;
+            background: #fff; color: #333; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            transition: all 0.2s; box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        .google-btn:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.25); transform: translateY(-1px); }
+        .google-btn:active { transform: translateY(0); }
+        .google-btn img { width: 20px; height: 20px; }
+
+        .divider {
+            display: flex; align-items: center; gap: 16px;
+            margin: 28px 0; color: #555; font-size: 12px;
+        }
+        .divider::before, .divider::after {
+            content: ''; flex: 1; height: 1px; background: #333;
+        }
+
+        /* Email/Password form */
+        .form-group { margin-bottom: 14px; text-align: left; }
+        label { display: block; margin-bottom: 5px; font-size: 12px; color: #999; }
+        input {
+            width: 100%; padding: 12px 14px;
+            background: #0f0f23; border: 1px solid #333; border-radius: 8px;
+            color: #fff; font-size: 14px; outline: none; transition: border-color 0.2s;
+        }
+        input:focus { border-color: #6c63ff; }
+
+        .submit-btn {
+            width: 100%; padding: 13px;
+            background: #6c63ff; color: #fff; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 600; cursor: pointer;
+            margin-top: 6px; transition: background 0.2s;
+        }
+        .submit-btn:hover { background: #5a52d5; }
+        .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .toggle-link {
+            margin-top: 18px; font-size: 13px; color: #888;
+        }
+        .toggle-link a {
+            color: #6c63ff; cursor: pointer; text-decoration: none;
+        }
+        .toggle-link a:hover { text-decoration: underline; }
+
+        .error-msg {
+            background: #ff444422; border: 1px solid #ff4444; color: #ff6666;
+            padding: 10px 14px; border-radius: 8px; margin-bottom: 16px;
+            font-size: 13px; display: none;
+        }
+        .loading { opacity: 0.6; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div class="auth-container" id="auth-container">
+        <div class="logo">🧠</div>
+        <h1>AI Canvas</h1>
+        <p class="subtitle">Sign in to access your workspace</p>
+
+        <div class="error-msg" id="error"></div>
+
+        <!-- Google Sign-In -->
+        <button class="google-btn" id="google-btn" onclick="signInWithGoogle()">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+            Continue with Google
+        </button>
+
+        <div class="divider">or</div>
+
+        <!-- Email/Password -->
+        <form id="email-form" onsubmit="handleEmailAuth(event)">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" required placeholder="you@example.com" autocomplete="email">
+            </div>
+            <div class="form-group">
+                <label>Password</label>
+                <input type="password" id="password" required minlength="6" placeholder="Min 6 characters" autocomplete="current-password">
+            </div>
+            <button type="submit" class="submit-btn" id="submit-btn">Sign In</button>
+        </form>
+
+        <div class="toggle-link">
+            <span id="toggle-text">Don't have an account?</span>
+            <a id="toggle-link" onclick="toggleMode()">Create one</a>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (compat mode for simplicity) -->
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+
+    <script>
+        // Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyDzXLevCIrkpKbszlWOC4y-V2MiulkAHLA",
+            authDomain: "ai-canvas-5e5cf.firebaseapp.com",
+            projectId: "ai-canvas-5e5cf",
+            storageBucket: "ai-canvas-5e5cf.firebasestorage.app",
+            messagingSenderId: "446930342684",
+            appId: "1:446930342684:web:b42538591adbde3ac5e0d9",
+            measurementId: "G-9K7K99T41P"
+        };
+        firebase.initializeApp(firebaseConfig);
+
+        let isSignUp = false;
+
+        // Clear stale tokens on login page load
+        firebase.auth().onAuthStateChanged((user) => {
+            if (!user) {
+                localStorage.removeItem('auth_token');
+                localStorage.removeItem('auth_user');
+                localStorage.removeItem('auth_photo');
+            }
+        });
+
+        async function saveTokenAndRedirect(user) {
+            const token = await user.getIdToken(true);
+            localStorage.setItem('auth_token', token);
+            localStorage.setItem('auth_user', user.displayName || user.email || '');
+            localStorage.setItem('auth_photo', user.photoURL || '');
+            window.location.href = '/dashboard';
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('error');
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        function hideError() {
+            document.getElementById('error').style.display = 'none';
+        }
+
+        function toggleMode() {
+            isSignUp = !isSignUp;
+            document.getElementById('submit-btn').textContent = isSignUp ? 'Create Account' : 'Sign In';
+            document.getElementById('toggle-text').textContent = isSignUp ? 'Already have an account?' : "Don't have an account?";
+            document.getElementById('toggle-link').textContent = isSignUp ? 'Sign in' : 'Create one';
+            hideError();
+        }
+
+        async function signInWithGoogle() {
+            hideError();
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                document.getElementById('auth-container').classList.add('loading');
+                const result = await firebase.auth().signInWithPopup(provider);
+                await saveTokenAndRedirect(result.user);
+            } catch (err) {
+                document.getElementById('auth-container').classList.remove('loading');
+                showError(err.message);
+            }
+        }
+
+        async function handleEmailAuth(e) {
+            e.preventDefault();
+            hideError();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+
+            try {
+                let result;
+                if (isSignUp) {
+                    result = await firebase.auth().createUserWithEmailAndPassword(email, password);
+                } else {
+                    result = await firebase.auth().signInWithEmailAndPassword(email, password);
+                }
+                await saveTokenAndRedirect(result.user);
+            } catch (err) {
+                let msg = err.message;
+                if (err.code === 'auth/user-not-found') msg = 'No account found. Create one first.';
+                if (err.code === 'auth/wrong-password') msg = 'Incorrect password.';
+                if (err.code === 'auth/email-already-in-use') msg = 'Email already registered. Sign in instead.';
+                if (err.code === 'auth/weak-password') msg = 'Password must be at least 6 characters.';
+                showError(msg);
+            }
+            btn.disabled = false;
+        }
+    </script>
+</body>
+</html>

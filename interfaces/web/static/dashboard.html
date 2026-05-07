@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
+  <script src="/static/auth.js"></script>
   <style>
     html, body { height: 100%; overflow: hidden; }
 
@@ -137,7 +138,7 @@
     .node-info { flex: 1; min-width: 0; }
     .node-filename { font-size: 0.8rem; font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
     .node-status { font-family: var(--font-mono); font-size: 0.62rem; color: var(--muted); letter-spacing: 0.02em; }
-    .node--ready .node-status { color: rgba(240,160,48,0.45); }
+    .node--ready .node-status { color: rgba(168,85,247,0.5); }
 
     .node-delete {
       position: absolute; top: 6px; right: 6px; background: none; border: none;
@@ -250,14 +251,61 @@
       padding: 4px 10px; text-align: center;
     }
 
+    /* ── Canvas Thinking State ── */
+    .canvas--thinking::after {
+      content: ''; position: absolute; inset: 0; z-index: 90; pointer-events: none;
+      background: radial-gradient(ellipse at center, rgba(168,85,247,0.06) 0%, transparent 70%);
+      animation: canvasPulse 2.4s ease-in-out infinite;
+    }
+    @keyframes canvasPulse {
+      0%, 100% { opacity: 0.4; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.02); }
+    }
+
+    .thinking-overlay {
+      position: fixed; top: 52px; left: 0; right: 0; bottom: 0; z-index: 95;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      pointer-events: none; animation: thinkFadeIn 0.4s ease;
+    }
+    @keyframes thinkFadeIn { from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)} }
+    .thinking-overlay.fade-out { animation: thinkFadeOut 0.6s ease forwards; }
+    @keyframes thinkFadeOut { to{opacity:0;transform:translateY(-8px)} }
+
+    .thinking-headline {
+      font-family: var(--font-display); font-size: 1.1rem; font-weight: 700;
+      color: var(--accent);
+      background: linear-gradient(90deg, var(--accent) 0%, var(--text-bright) 50%, var(--accent) 100%);
+      background-size: 200% 100%;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      animation: shimmer 2.5s linear infinite;
+      text-align: center; max-width: 400px;
+    }
+    @keyframes shimmer { 0%{background-position:200% 0%}100%{background-position:-200% 0%} }
+
+    .thinking-subtitle {
+      font-family: var(--font-mono); font-size: 0.65rem; color: var(--muted);
+      margin-top: 10px; text-align: center; transition: all 0.3s ease;
+    }
+
+    .thinking-dots {
+      display: flex; gap: 6px; margin-top: 16px;
+    }
+    .thinking-dots span {
+      width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.3;
+      animation: dotBounce 1.4s ease infinite;
+    }
+    .thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce { 0%,80%,100%{opacity:0.3;transform:scale(1)}40%{opacity:1;transform:scale(1.4)} }
+
     /* Suggestion chips */
     .agent-suggestions { display: flex; gap: 4px; flex-wrap: wrap; }
     .agent-suggestions:empty { display: none; }
     .suggestion-chip {
       font-family: var(--font-display); font-size: 0.68rem; font-weight: 600;
-      padding: 6px 12px; border-radius: 12px; cursor: pointer;
-      background: rgba(240,160,48,0.08); color: var(--accent); border: 1px solid var(--accent-soft);
-      transition: all 0.15s; white-space: nowrap;
+      padding: 6px 12px; border-radius: 20px; cursor: pointer;
+      background: var(--accent-glow); color: var(--accent); border: 1px solid var(--accent-soft);
+      transition: all 0.2s; white-space: nowrap;
     }
     .suggestion-chip:hover { background: var(--accent); color: var(--bg); }
 
@@ -482,7 +530,11 @@
       <span class="toolbar-hint">Scroll=zoom · Space+drag=pan · Dbl-click=note · Ctrl+K=search</span>
     </div>
     <div class="toolbar-right">
+      <button id="provider-settings-btn" class="tool-btn" title="AI Provider Settings">⚙ AI Provider</button>
       <button id="theme-toggle" class="tool-btn tool-btn--icon" title="Toggle theme">☀</button>
+      <span id="user-name" style="font-size:0.7rem;color:var(--muted);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+      <img id="user-photo" style="width:28px;height:28px;border-radius:50%;border:1px solid var(--border);display:none;" />
+      <button class="tool-btn" onclick="logout()" title="Sign out">🚪</button>
     </div>
   </div>
 
@@ -548,6 +600,16 @@
     // ═══════════════════════════════════════════
     // AI Canvas Dashboard — Full Featured
     // ═══════════════════════════════════════════
+
+    // Show user info in toolbar
+    if (window.getAuthUser) {
+      const u = window.getAuthUser();
+      document.getElementById('user-name').textContent = u.name;
+      if (u.photo) {
+        const img = document.getElementById('user-photo');
+        img.src = u.photo; img.style.display = 'block';
+      }
+    }
 
     const canvas = document.getElementById('canvas');
     const transformLayer = document.getElementById('transform-layer');
@@ -1400,11 +1462,14 @@
       const btn = document.getElementById('btn-organize');
       btn.disabled = true; btn.textContent = '⏳ Organizing…';
       try {
-        const res = await fetch('/api/agent/organize', {
+      const res = await fetch('/api/agent/organize', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pattern: 'categories', custom_instruction: '' }),
         });
-        if (!res.ok) throw new Error('Organize failed');
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.detail || 'Organize failed');
+        }
         btn.textContent = '✓ Done!';
         setTimeout(() => location.reload(), 800);
       } catch (err) {
@@ -1618,6 +1683,9 @@
       agentConvoHistory.push({ role: 'user', text: q });
       renderAgentConvo(convoLog);
 
+      // Start canvas thinking state
+      startThinking(q.length > 40 ? q.slice(0, 40) + '…' : q);
+
       try {
         const res = await fetch('/api/agent/converse', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1662,12 +1730,50 @@
         agentConvoHistory.push({ role: 'ai', text: '❌ ' + err.message });
         renderAgentConvo(convoLog);
       }
+      stopThinking();
       btn.disabled = false; btn.textContent = 'Send ⏎';
+    }
+
+    // ══════════════ CANVAS THINKING OVERLAY ══════════════
+    let thinkingOverlay = null;
+
+    function startThinking(headline) {
+      canvas.classList.add('canvas--thinking');
+      if (thinkingOverlay) thinkingOverlay.remove();
+      thinkingOverlay = document.createElement('div');
+      thinkingOverlay.className = 'thinking-overlay';
+      thinkingOverlay.innerHTML = `
+        <div class="thinking-headline" id="thinking-headline">${escapeHtml(headline || 'Thinking…')}</div>
+        <div class="thinking-subtitle" id="thinking-subtitle">Processing your request</div>
+        <div class="thinking-dots"><span></span><span></span><span></span></div>
+      `;
+      document.body.appendChild(thinkingOverlay);
+    }
+
+    function updateThinkingSubtitle(text) {
+      const el = document.getElementById('thinking-subtitle');
+      if (el) el.textContent = text;
+    }
+
+    function stopThinking() {
+      canvas.classList.remove('canvas--thinking');
+      if (thinkingOverlay) {
+        thinkingOverlay.classList.add('fade-out');
+        setTimeout(() => { if (thinkingOverlay) { thinkingOverlay.remove(); thinkingOverlay = null; } }, 600);
+      }
     }
 
     function handleAgentMessage(msg, convoLog, suggestionsDiv) {
       if (msg.type === 'thinking') {
-        addAgentMsg(convoLog, 'action', msg.text);
+        updateThinkingSubtitle(msg.text);
+      } else if (msg.type === 'pipeline_start') {
+        // Just update subtitle with first step info
+        const firstStep = (msg.steps || [])[0];
+        if (firstStep) updateThinkingSubtitle(firstStep.label + '…');
+      } else if (msg.type === 'step') {
+        if (msg.status === 'running') updateThinkingSubtitle(msg.text || msg.step);
+      } else if (msg.type === 'pipeline_done') {
+        // Will be stopped by agentSend completion
       } else if (msg.type === 'action') {
         addAgentMsg(convoLog, 'action', msg.text);
         // Handle reload action
@@ -1983,6 +2089,100 @@
     function removeNodeCtxMenus() { document.querySelectorAll('.node-ctx-menu').forEach(m => m.remove()); }
 
     function escapeHtml(str) { const d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
+
+    // ══════════ PROVIDER SETTINGS MODAL ══════════
+    (function() {
+      const modal = document.createElement('div');
+      modal.id = 'provider-modal';
+      modal.innerHTML = `
+        <div class="pm-overlay" onclick="closeProviderModal()"></div>
+        <div class="pm-dialog">
+          <h3 style="margin:0 0 16px;color:var(--accent)">⚙ AI Provider Settings</h3>
+          <div id="pm-providers"></div>
+          <div id="pm-status" style="margin-top:12px;font-size:0.75rem;color:var(--muted)"></div>
+        </div>
+      `;
+      modal.style.cssText = 'display:none;position:fixed;inset:0;z-index:9999;';
+      document.body.appendChild(modal);
+
+      const style = document.createElement('style');
+      style.textContent = `
+        .pm-overlay { position:absolute;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px); }
+        .pm-dialog { position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;width:440px;max-height:80vh;overflow-y:auto; }
+        .pm-provider { padding:12px;border:1px solid var(--border);border-radius:var(--radius-sm);margin-bottom:10px;cursor:pointer;transition:all 0.2s; }
+        .pm-provider:hover { border-color:var(--accent-soft); }
+        .pm-provider.active { border-color:var(--accent);background:var(--accent-glow); }
+        .pm-provider h4 { margin:0 0 4px;font-size:0.85rem; }
+        .pm-provider p { margin:0;font-size:0.7rem;color:var(--muted); }
+        .pm-key-row { margin-top:8px;display:flex;gap:6px;align-items:center; }
+        .pm-key-row input { flex:1;padding:6px 10px;font-size:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-family:var(--font-mono); }
+        .pm-key-row button, .pm-model-row button { padding:6px 12px;font-size:0.7rem;background:var(--accent);color:#000;border:none;border-radius:var(--radius-sm);cursor:pointer;font-weight:600; }
+        .pm-model-row { margin-top:8px;display:flex;gap:6px;align-items:center; }
+        .pm-model-row select { flex:1;padding:6px 10px;font-size:0.75rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text); }
+      `;
+      document.head.appendChild(style);
+
+      document.getElementById('provider-settings-btn').onclick = openProviderModal;
+
+      async function openProviderModal() {
+        modal.style.display = 'block';
+        const res = await fetch('/api/providers');
+        const data = await res.json();
+        renderProviders(data);
+      }
+
+      window.closeProviderModal = () => { modal.style.display = 'none'; };
+
+      function renderProviders(data) {
+        const container = document.getElementById('pm-providers');
+        container.innerHTML = data.providers.map(p => `
+          <div class="pm-provider ${p.is_active ? 'active' : ''}" data-id="${p.id}">
+            <h4>${p.name} ${p.is_active ? '✓' : ''}</h4>
+            <p>${p.description}</p>
+            ${p.requires_api_key ? `
+              <div class="pm-key-row">
+                <input type="password" placeholder="API Key ${p.has_api_key ? '(saved)' : '(required)'}" data-provider="${p.id}" />
+              </div>
+            ` : ''}
+            <div class="pm-model-row">
+              <select data-provider-model="${p.id}">
+                ${p.models.map(m => `<option value="${m}" ${m === data.active_model && p.is_active ? 'selected' : ''}>${m}</option>`).join('')}
+              </select>
+              <button onclick="activateProvider('${p.id}')">Activate</button>
+              <button onclick="testProvider('${p.id}')" style="background:var(--surface2);color:var(--text);border:1px solid var(--border)">Test</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      window.activateProvider = async (id) => {
+        const keyInput = document.querySelector(`input[data-provider="${id}"]`);
+        const modelSelect = document.querySelector(`select[data-provider-model="${id}"]`);
+        const body = { provider: id, model: modelSelect?.value || null };
+        if (keyInput && keyInput.value) body.api_key = keyInput.value;
+        
+        const res = await fetch('/api/providers/active', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const result = await res.json();
+        if (result.success) {
+          document.getElementById('pm-status').textContent = `✅ Activated: ${id} / ${result.active_model}`;
+          openProviderModal(); // refresh
+        } else {
+          document.getElementById('pm-status').textContent = `❌ Failed`;
+        }
+      };
+
+      window.testProvider = async (id) => {
+        const keyInput = document.querySelector(`input[data-provider="${id}"]`);
+        const modelSelect = document.querySelector(`select[data-provider-model="${id}"]`);
+        const body = { provider: id, model: modelSelect?.value || null };
+        if (keyInput && keyInput.value) body.api_key = keyInput.value;
+
+        document.getElementById('pm-status').textContent = '⏳ Testing connection...';
+        const res = await fetch('/api/providers/test', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const result = await res.json();
+        document.getElementById('pm-status').textContent = result.success ? `✅ Connected! Response: "${result.response}"` : `❌ Error: ${result.error}`;
+      };
+    })();
   </script>
 </body>
 </html>

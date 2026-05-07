@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -8,6 +8,7 @@ from typing import Optional
 from interfaces.adapters.base_adapter import AdapterRequest
 from interfaces.adapters.research_adapter import ResearchAdapter
 from pipelines.knowledge_pipeline import KnowledgePipeline
+from auth.auth import get_current_user
 
 app = FastAPI(
     title="Multi-Agent Research System",
@@ -45,10 +46,19 @@ class ResearchResponse(BaseModel):
     error: Optional[str] = None
 
 
+# --- Public routes ---
+
 @app.get("/", include_in_schema=False)
 async def index():
     return FileResponse(os.path.join(_static_dir, "index.html"))
 
+@app.get("/login", include_in_schema=False)
+async def login_page():
+    return FileResponse(os.path.join(_static_dir, "login.html"))
+
+@app.get("/dashboard", include_in_schema=False)
+async def dashboard_page():
+    return FileResponse(os.path.join(_static_dir, "dashboard.html"))
 
 @app.get("/api/health")
 async def health():
@@ -56,7 +66,7 @@ async def health():
 
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...), x: float = 0, y: float = 0):
+async def upload_file(file: UploadFile = File(...), x: float = 0, y: float = 0, current_user: dict = Depends(get_current_user)):
     """Upload a file, extract text via KnowledgePipeline, and save as knowledge."""
     try:
         contents = await file.read()
@@ -68,7 +78,7 @@ async def upload_file(file: UploadFile = File(...), x: float = 0, y: float = 0):
         raise HTTPException(status_code=500, detail=f"Failed to process file: {str(e)}")
 
 @app.post("/api/notes/generate")
-async def generate_notes(file: UploadFile = File(None), text: str = "", title: str = ""):
+async def generate_notes(file: UploadFile = File(None), text: str = "", title: str = "", current_user: dict = Depends(get_current_user)):
     """Generate mind-map notes from text or uploaded file. Uses LLM to split into root + branches."""
     import uuid as _uuid
     try:
@@ -201,7 +211,7 @@ Content to analyze:
 
 
 @app.get("/api/nodes")
-async def get_nodes():
+async def get_nodes(current_user: dict = Depends(get_current_user)):
     """Return all saved nodes."""
     return _knowledge_pipeline.get_all_nodes()
 
@@ -210,7 +220,7 @@ class UpdateNodeRequest(BaseModel):
     content: Optional[str] = None
 
 @app.put("/api/nodes/{node_id}")
-async def update_node(node_id: str, request: UpdateNodeRequest):
+async def update_node(node_id: str, request: UpdateNodeRequest, current_user: dict = Depends(get_current_user)):
     """Update node name and/or content."""
     try:
         _knowledge_pipeline.update_node(node_id, filename=request.filename, content=request.content)
@@ -225,7 +235,7 @@ class UpdatePositionRequest(BaseModel):
     y: float
 
 @app.patch("/api/nodes/{node_id}/position")
-async def update_node_position(node_id: str, request: UpdatePositionRequest):
+async def update_node_position(node_id: str, request: UpdatePositionRequest, current_user: dict = Depends(get_current_user)):
     """Update node position after drag."""
     try:
         _knowledge_pipeline.update_node_position(node_id, request.x, request.y)
@@ -234,7 +244,7 @@ async def update_node_position(node_id: str, request: UpdatePositionRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/nodes/{node_id}")
-async def delete_node(node_id: str):
+async def delete_node(node_id: str, current_user: dict = Depends(get_current_user)):
     """Delete a node and its knowledge file."""
     try:
         _knowledge_pipeline.delete_node(node_id)
@@ -256,7 +266,7 @@ class UngroupRequest(BaseModel):
     node_id: str
 
 @app.post("/api/nodes/connect")
-async def connect_nodes(request: ConnectRequest):
+async def connect_nodes(request: ConnectRequest, current_user: dict = Depends(get_current_user)):
     """Connect two nodes as parent/child or group them."""
     try:
         _knowledge_pipeline.connect_nodes(request.source_id, request.target_id, request.action)
@@ -265,7 +275,7 @@ async def connect_nodes(request: ConnectRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.post("/api/nodes/disconnect")
-async def disconnect_nodes(request: DisconnectRequest):
+async def disconnect_nodes(request: DisconnectRequest, current_user: dict = Depends(get_current_user)):
     """Remove parent-child relationship."""
     try:
         _knowledge_pipeline.disconnect_nodes(request.source_id, request.target_id)
@@ -274,7 +284,7 @@ async def disconnect_nodes(request: DisconnectRequest):
         raise HTTPException(status_code=404, detail=str(e))
 
 @app.post("/api/nodes/ungroup")
-async def ungroup_node(request: UngroupRequest):
+async def ungroup_node(request: UngroupRequest, current_user: dict = Depends(get_current_user)):
     """Remove a node from its group."""
     try:
         _knowledge_pipeline.ungroup_node(request.node_id)
@@ -287,7 +297,7 @@ class AgentAskRequest(BaseModel):
     question: str
 
 @app.post("/api/agent/ask")
-async def agent_ask(request: AgentAskRequest):
+async def agent_ask(request: AgentAskRequest, current_user: dict = Depends(get_current_user)):
     """Ask the support agent a question using selected node knowledge."""
     if not request.node_ids:
         raise HTTPException(status_code=400, detail="No nodes selected.")
@@ -309,7 +319,7 @@ class ResearchRequest2(BaseModel):
     topic: str
 
 @app.post("/api/agent/research")
-async def agent_research(request: ResearchRequest2):
+async def agent_research(request: ResearchRequest2, current_user: dict = Depends(get_current_user)):
     """Research a topic online and create a mind map of knowledge nodes."""
     if not request.topic.strip():
         raise HTTPException(status_code=400, detail="Topic is empty.")
@@ -326,7 +336,7 @@ class OrganizeRequest(BaseModel):
     custom_instruction: str = ""
 
 @app.post("/api/agent/organize")
-async def agent_organize(request: OrganizeRequest):
+async def agent_organize(request: OrganizeRequest, current_user: dict = Depends(get_current_user)):
     """Use AI to auto-organize all canvas nodes into groups, hierarchies, and remove duplicates."""
     try:
         from agents.organizer.organizer_agent import OrganizerAgent
@@ -342,7 +352,7 @@ class ConverseRequest(BaseModel):
     selected_node_ids: list = []
 
 @app.post("/api/agent/converse")
-async def agent_converse(request: ConverseRequest):
+async def agent_converse(request: ConverseRequest, current_user: dict = Depends(get_current_user)):
     """Conversational AI agent that detects intent and dispatches actions."""
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message is empty.")
@@ -368,7 +378,7 @@ class ChatRequest(BaseModel):
     source: str = "text"  # "text" or "voice"
 
 @app.post("/api/chat")
-async def chat_message(request: ChatRequest):
+async def chat_message(request: ChatRequest, current_user: dict = Depends(get_current_user)):
     """Save a chat/voice message as a new knowledge node."""
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
@@ -405,7 +415,7 @@ async def chat_message(request: ChatRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/knowledge/{node_id}")
-async def stream_knowledge(node_id: str):
+async def stream_knowledge(node_id: str, current_user: dict = Depends(get_current_user)):
     """Stream back the extracted knowledge text for a node."""
     try:
         text = _knowledge_pipeline.load_knowledge(node_id)
@@ -420,7 +430,7 @@ async def stream_knowledge(node_id: str):
     return StreamingResponse(generate(), media_type="text/plain")
 
 @app.post("/api/research", response_model=ResearchResponse)
-async def research(request: ResearchRequest):
+async def research(request: ResearchRequest, current_user: dict = Depends(get_current_user)):
     adapter_req = AdapterRequest(topic=request.topic)
     result = _research_adapter.execute(adapter_req)
     if not result.success:
@@ -432,6 +442,77 @@ async def research(request: ResearchRequest):
         critique=result.critique,
         metadata=result.metadata,
     )
+
+
+# =============================================================================
+# PROVIDER SETTINGS ENDPOINTS
+# =============================================================================
+
+class ProviderSettingsRequest(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+
+
+@app.get("/api/providers")
+async def get_providers(current_user: dict = Depends(get_current_user)):
+    """Get all available providers and current settings."""
+    from engine.registry import PROVIDERS, load_settings
+    settings = load_settings()
+    providers_list = []
+    for key, info in PROVIDERS.items():
+        providers_list.append({
+            "id": key,
+            "name": info["name"],
+            "description": info["description"],
+            "requires_api_key": info["requires_api_key"],
+            "models": info["models"],
+            "is_active": key == settings.get("active_provider"),
+            "has_api_key": bool(settings.get("api_keys", {}).get(key)),
+        })
+    return {
+        "providers": providers_list,
+        "active_provider": settings.get("active_provider", "ollama"),
+        "active_model": settings.get("active_model", "qwen3.5"),
+    }
+
+
+@app.post("/api/providers/active")
+async def set_active_provider(req: ProviderSettingsRequest, current_user: dict = Depends(get_current_user)):
+    """Set active provider, model, and optionally save API key."""
+    from engine.registry import PROVIDERS, load_settings, save_settings
+    if req.provider not in PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+
+    settings = load_settings()
+    settings["active_provider"] = req.provider
+    if req.model:
+        settings["active_model"] = req.model
+    elif req.provider != settings.get("active_provider"):
+        # Default to first model of new provider
+        settings["active_model"] = PROVIDERS[req.provider]["models"][0]
+
+    if req.api_key:
+        if "api_keys" not in settings:
+            settings["api_keys"] = {}
+        settings["api_keys"][req.provider] = req.api_key
+
+    save_settings(settings)
+    return {"success": True, "active_provider": req.provider, "active_model": settings["active_model"]}
+
+
+@app.post("/api/providers/test")
+async def test_provider(req: ProviderSettingsRequest, current_user: dict = Depends(get_current_user)):
+    """Test connection to a provider."""
+    from engine.registry import get_engine
+    try:
+        engine = get_engine(provider=req.provider, model=req.model, api_key=req.api_key)
+        llm = engine.create_llm()
+        from langchain_core.messages import HumanMessage
+        response = llm.invoke([HumanMessage(content="Say 'hello' in one word.")])
+        return {"success": True, "response": response.content[:100]}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def start():

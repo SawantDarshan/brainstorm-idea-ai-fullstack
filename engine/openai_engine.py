@@ -5,14 +5,15 @@ from config.global_context import OPENAI_API_KEY, OPENAI_MODEL
 class OpenAIEngine(BaseEngine):
     """OpenAI LLM engine adapter."""
 
-    def __init__(self, model: str = None):
+    def __init__(self, model: str = None, api_key: str = None):
         self.model = model or OPENAI_MODEL
+        self._api_key = api_key or OPENAI_API_KEY
 
     def create_llm(self, model: str = None, **kwargs):
         """Create an OpenAI ChatModel instance for use in chains."""
         from langchain_openai import ChatOpenAI
         model = model or self.model
-        return ChatOpenAI(model=model, api_key=OPENAI_API_KEY, **kwargs)
+        return ChatOpenAI(model=model, api_key=self._api_key, **kwargs)
 
     def create_agent(self, tools: list = None, model: str = None, **kwargs):
         """Create an OpenAI agent with optional tools."""
