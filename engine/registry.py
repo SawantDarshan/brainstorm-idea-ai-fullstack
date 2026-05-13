@@ -2,7 +2,7 @@
 import json
 import os
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+DATA_DIR = "/tmp/data" if os.environ.get("VERCEL") else os.path.join(os.path.dirname(__file__), "..", "data")
 SETTINGS_FILE = os.path.join(DATA_DIR, "provider_settings.json")
 
 PROVIDERS = {

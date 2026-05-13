@@ -18,9 +18,14 @@ class KnowledgePipeline:
     SYSTEM_RESEARCHER_ID = "system-researcher"
 
     def __init__(self, data_dir: str = None):
-        self.data_dir = data_dir or os.path.join(
-            os.path.dirname(__file__), "..", "data"
-        )
+        if data_dir:
+            self.data_dir = data_dir
+        elif os.environ.get("VERCEL"):
+            self.data_dir = "/tmp/data"
+        else:
+            self.data_dir = os.path.join(
+                os.path.dirname(__file__), "..", "data"
+            )
         os.makedirs(self.data_dir, exist_ok=True)
         self._files_dir = os.path.join(self.data_dir, "files")
         os.makedirs(self._files_dir, exist_ok=True)

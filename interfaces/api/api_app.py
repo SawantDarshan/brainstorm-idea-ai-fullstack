@@ -24,9 +24,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files (HTML/CSS)
+# Serve static files (HTML/CSS) - skip on Vercel (read-only filesystem)
 _static_dir = os.path.join(os.path.dirname(__file__), "..", "web", "static")
-app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+if os.path.isdir(_static_dir) and not os.environ.get("VERCEL"):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # Pipeline singletons
 _knowledge_pipeline = KnowledgePipeline()
@@ -46,19 +47,20 @@ class ResearchResponse(BaseModel):
     error: Optional[str] = None
 
 
-# --- Public routes ---
+# --- Public routes (only serve HTML locally, not on Vercel where React frontend handles it) ---
 
-@app.get("/", include_in_schema=False)
-async def index():
-    return FileResponse(os.path.join(_static_dir, "index.html"))
+if not os.environ.get("VERCEL"):
+    @app.get("/", include_in_schema=False)
+    async def index():
+        return FileResponse(os.path.join(_static_dir, "index.html"))
 
-@app.get("/login", include_in_schema=False)
-async def login_page():
-    return FileResponse(os.path.join(_static_dir, "login.html"))
+    @app.get("/login", include_in_schema=False)
+    async def login_page():
+        return FileResponse(os.path.join(_static_dir, "login.html"))
 
-@app.get("/dashboard", include_in_schema=False)
-async def dashboard_page():
-    return FileResponse(os.path.join(_static_dir, "dashboard.html"))
+    @app.get("/dashboard", include_in_schema=False)
+    async def dashboard_page():
+        return FileResponse(os.path.join(_static_dir, "dashboard.html"))
 
 @app.get("/api/health")
 async def health():

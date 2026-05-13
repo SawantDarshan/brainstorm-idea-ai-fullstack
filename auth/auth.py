@@ -1,4 +1,6 @@
 import os
+import json
+import base64
 
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
@@ -6,9 +8,16 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Initialize Firebase Admin SDK
-_cred_path = os.path.join(os.path.dirname(__file__), "..", "config", "firebase-service-account.json")
 if not firebase_admin._apps:
-    cred = credentials.Certificate(_cred_path)
+    # Option 1: FIREBASE_CREDENTIALS env var (base64-encoded JSON) — for Vercel/cloud
+    firebase_creds_b64 = os.environ.get("FIREBASE_CREDENTIALS")
+    if firebase_creds_b64:
+        cred_dict = json.loads(base64.b64decode(firebase_creds_b64))
+        cred = credentials.Certificate(cred_dict)
+    else:
+        # Option 2: Local file
+        _cred_path = os.path.join(os.path.dirname(__file__), "..", "config", "firebase-service-account.json")
+        cred = credentials.Certificate(_cred_path)
     firebase_admin.initialize_app(cred)
 
 # Bearer token scheme
