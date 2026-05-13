@@ -3,7 +3,7 @@
   "outputDirectory": "frontend-react/dist",
   "functions": {
     "api/index.py": {
-      "runtime": "@vercel/python@4.0.0"
+      "runtime": "@vercel/python@4.5.1"
     }
   },
   "rewrites": [
