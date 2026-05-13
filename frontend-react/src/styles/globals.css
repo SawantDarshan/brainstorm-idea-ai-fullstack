@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent: #f0a030;
+  --accent-soft: rgba(240,160,48,0.15);
+  --accent-glow: rgba(240,160,48,0.08);
+  --glass-bg: rgba(18,18,24,0.85);
+  --glass-border: rgba(255,255,255,0.06);
+  --glass-blur: 16px;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* ReactFlow overrides */
+.react-flow__background {
+  background-color: #0a0a0f !important;
+}
+
+.react-flow__edge-path {
+  stroke: var(--accent) !important;
+  stroke-dasharray: 8 6;
+  opacity: 0.3;
+}
+
+.react-flow__edge:hover .react-flow__edge-path {
+  opacity: 0.7;
+  stroke-width: 3px;
+}
+
+.react-flow__controls {
+  background: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 8px !important;
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  color: white !important;
+}
+
+.react-flow__minimap {
+  background: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 8px !important;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.15); }
+
+/* Glass card utility */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(1.2);
+  border: 1px solid var(--glass-border);
+}

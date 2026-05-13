@@ -623,7 +623,8 @@
     const panelSave = document.getElementById('panel-save');
     const tooltip = document.getElementById('node-tooltip');
 
-    const sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    const sessionId = sessionStorage.getItem('canvas-session-id') || ('session-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8));
+    sessionStorage.setItem('canvas-session-id', sessionId);
     let allNodesData = [];
     let dragCounter = 0;
     let activeNodeId = null, activeNodeEl = null;
@@ -850,7 +851,7 @@
           }
           const data = await res.json();
           status.textContent = `✅ Created ${data.nodes_created} notes! Reloading…`;
-          setTimeout(() => location.reload(), 800);
+          setTimeout(() => reloadCanvas(), 800);
         } catch (err) {
           status.textContent = '❌ ' + err.message;
           goBtn.disabled = false; goBtn.textContent = '🧠 Generate Mind Map';
@@ -1216,7 +1217,7 @@
           const nodesRes = await fetch('/api/nodes');
           if (nodesRes.ok) {
             const newNodes = await nodesRes.json();
-            if (newNodes.length > 0) { location.reload(); }
+            if (newNodes.length > 0) { reloadCanvas(); }
             else { alert('Warning: Connect may have failed. Nodes appear empty.'); }
           }
         } catch (err) { console.error(err); alert('Connect failed: ' + err.message); }
@@ -1445,7 +1446,7 @@
             throw new Error(errData.detail || `Research failed (${res.status})`);
           }
           status.textContent = 'Done! Reloading canvas…';
-          setTimeout(() => location.reload(), 800);
+          setTimeout(() => reloadCanvas(), 800);
         } catch (err) {
           status.textContent = '❌ ' + err.message;
           goBtn.disabled = false; goBtn.textContent = 'Research';
@@ -1471,7 +1472,7 @@
           throw new Error(err.detail || 'Organize failed');
         }
         btn.textContent = '✓ Done!';
-        setTimeout(() => location.reload(), 800);
+        setTimeout(() => reloadCanvas(), 800);
       } catch (err) {
         alert('Organize failed: ' + err.message);
         btn.disabled = false; btn.textContent = '✨ Organize';
@@ -1619,7 +1620,8 @@
 
     // ══════════════ UNIFIED AGENT ══════════════
     let agentSelectedNodes = new Set(), agentSelecting = false;
-    const agentConvoHistory = []; // [{role:'user'|'ai', text}]
+    const agentConvoHistory = JSON.parse(sessionStorage.getItem('agentConvoHistory') || '[]');
+    function persistConvo() { try { sessionStorage.setItem('agentConvoHistory', JSON.stringify(agentConvoHistory.slice(-50))); } catch(e) {} }
 
     function initAgent() {
       const selectBtn = document.getElementById('agent-select-btn');
@@ -1681,6 +1683,7 @@
 
       // Add user message
       agentConvoHistory.push({ role: 'user', text: q });
+      persistConvo();
       renderAgentConvo(convoLog);
 
       // Start canvas thinking state
@@ -1725,9 +1728,11 @@
         // Save last reply to history
         if (lastReplyText) {
           agentConvoHistory.push({ role: 'ai', text: lastReplyText });
+          persistConvo();
         }
       } catch (err) {
         agentConvoHistory.push({ role: 'ai', text: '❌ ' + err.message });
+        persistConvo();
         renderAgentConvo(convoLog);
       }
       stopThinking();
@@ -1778,7 +1783,7 @@
         addAgentMsg(convoLog, 'action', msg.text);
         // Handle reload action
         if (msg.action === 'reload') {
-          setTimeout(() => location.reload(), 1000);
+          setTimeout(() => reloadCanvas(), 1000);
         }
       } else if (msg.type === 'reply') {
         const div = addAgentMsg(convoLog, 'ai', msg.text);
@@ -1808,7 +1813,7 @@
         }
         // For research that creates many nodes, reload
         if (msg.count > 2) {
-          setTimeout(() => location.reload(), 1500);
+          setTimeout(() => reloadCanvas(), 1500);
         }
       } else if (msg.type === 'error') {
         addAgentMsg(convoLog, 'action', '❌ ' + msg.text);
